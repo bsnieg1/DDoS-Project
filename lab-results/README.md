@@ -67,6 +67,23 @@ Flota jest gotowa do sterowania przez C2. Binarka serwera Sliver siedzi w konten
 `c2` (`/opt/sliver/sliver-server`, montowana z `c2/bin/`). Demonstracja „state-of-the-art
 botnet C2":
 
+### Automatyzacja — jedna komenda
+
+```bash
+FLEET=5 DURATION=120 bash lab-results/scripts/run-c2-attack.sh
+```
+Skrypt robi całość: listener mTLS → generuje implanta (lub bierze z cache
+`c2/data/botimplant`) → wgrywa na flotę i uruchamia implanty → czeka na sesje →
+komendą `execute` odpala Rapid Reset na wszystkich botach → zapisuje dowód
+(lista sesji) do `lab-results/data/c2-proof.txt`.
+
+> Pierwszy `generate` kompiluje implanta (Go) — jedyny wolny krok. Na słabym CPU
+> może nie zdążyć (podnieś `BUILD_TIMEOUT`); na mocnym idzie kilka minut, a wynik
+> jest cache'owany. Jeśli Twoja wersja Sliver ma inny format tabeli `sessions` i
+> skrypt nie sparsuje ID, wypisze gotowe komendy do ręcznego `execute` — procedura niżej.
+
+### Procedura ręczna (fallback / do nauki)
+
 ```bash
 # konsola Slivera
 docker compose exec c2 /opt/sliver/sliver-server
