@@ -1,0 +1,52 @@
+# Podlacza "stary serwer" (nginx SPRZED mitygacji HTTP/2 Rapid Reset,
+# CVE-2023-44487 - patch w 1.25.3) pod usluge "victim" zarzadzana przez
+# docker-compose, zamiast recznych `docker build`/`docker run` jak w
+# lab-results/scripts/run-botnet-matrix.sh.
+#
+# Wykorzystuje juz istniejacy victim/Dockerfile.labvic (ARG BASE = wersja
+# nginx) + victim/entry.labvic.sh (zmienna MODE = normal|hardened, przelacza
+# config w runtime). Nic nowego nie dodaje - tylko podpina to pod "victim".
+#
+# Dzieki temu flota (docker-compose.botnet.yml + scenarios/botnet-fleet.sh)
+# atakuje automatycznie TEN serwer, bez zadnych dodatkowych krokow: "victim"
+# to zawsze ten sam alias DNS w sieci labnet, zmienia sie tylko obraz pod nim.
+#
+# --- Uzycie ---
+#
+# A) PODATNY, bez hardeningu (do zobaczenia realnego Rapid Reset):
+#   NGINX_OLD=1.25.1-alpine VICTIM_MODE=normal \
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.labvic.yml -f docker-compose.botnet.yml \
+#     up -d --build --scale botfleet=5
+#
+#   bash scenarios/botnet-fleet.sh fire --requests 20000 --concurrency 300
+#
+# B) PODATNA wersja nginx + WLACZONY hardening (rate-limiting) - porownanie:
+#   NGINX_OLD=1.25.1-alpine VICTIM_MODE=hardened  (reszta jak wyzej)
+#
+# C) Zalatany nginx do porownania: po prostu NIE dodawaj tej nakladki
+#    (zostaje domyslny nginx:1.27-alpine z docker-compose.yml / monitoring.yml).
+#
+# Parametry (zmienne srodowiskowe):
+#   NGINX_OLD     wersja bazowego obrazu nginx (domyslnie 1.25.1-alpine,
+#                 ostatni przed mitygacja resetow w 1.25.3)
+#   VICTIM_MODE   normal | hardened (domyslnie normal)
+
+services:
+  victim:
+    build:
+      context: ./victim
+      dockerfile: Dockerfile.labvic
+      args:
+        BASE: "nginx:${NGINX_OLD:-1.25.1-alpine}"
+    image: lab-victim-labvic:latest
+    environment:
+      MODE: "${VICTIM_MODE:-normal}"
+    # UWAGA: docker-compose.yml (baza) bind-montuje ./victim/nginx.conf jako
+    # read-only na /etc/nginx/nginx.conf. Compose SCALA listy wolumenow miedzy
+    # plikami (nie da sie ich tu "wyzerowac" przez volumes: []), wiec ten bind
+    # mount zostaje aktywny. To jest OK: entry.labvic.sh pisze config pod INNA
+    # sciezka (/etc/nginx/active.conf), a Dockerfile.labvic uruchamia nginx z
+    # `-c /etc/nginx/active.conf`, wiec bind-mount na nginx.conf jest po prostu
+    # nieuzywany (nie koliduje). Bind-mounty cert.pem/key.pem/html z bazy
+    # nadpisuja identyczna zawartosc skopiowana do obrazu - bez roznicy funkcjonalnej.

@@ -1,0 +1,34 @@
+# Flota skalowalnych botow do testu wielu-zrodlowego (multi-source) obciazenia.
+#
+# ZAKRES I GRANICA (wazne):
+#   Ta usluga zarzadza WYLACZNIE kontenerami TEGO labu, ktore juz na etapie
+#   `docker build` maja wgrany PoC `rapidreset` (patrz bot/Dockerfile - binarka
+#   jest kompilowana i kladziona w obrazie RAZ, przy budowaniu). Kontener
+#   startuje bezczynnie ("sleep infinity"); atak odpalasz recznie przez
+#   scenarios/botnet-fleet.sh.
+#
+#   Nie ma tu ZADNEGO mechanizmu, ktory wgrywalby atak na urzadzenia, ktore go
+#   jeszcze nie maja (implant, auto-dystrybucja, C2 push). To swiadomie poza
+#   zakresem - zarzadzamy tylko wlasna, z gory zbudowana flota.
+#
+# Uzycie (patrz scenarios/botnet-fleet.sh dla gotowych komend):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.botnet.yml up -d --build --scale botfleet=5
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.botnet.yml ps -q botfleet       # lista ID kontenerow floty
+
+services:
+  botfleet:
+    build: ./bot          # TEN SAM obraz/Dockerfile co usluga "bot" (override.yml) -
+                           # rapidreset wbudowany przy budowaniu, nic w runtime.
+    image: ddos-lab-botfleet:latest
+    # BRAK container_name -> skalowalne przez --scale botfleet=N
+    # (ten sam wzorzec co docker-compose.victims.yml / victim-node).
+    networks:
+      - labnet
+    deploy:
+      resources:
+        limits:
+          cpus: "${BOT_CPUS:-0.8}"
+          memory: 256M
