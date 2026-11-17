@@ -1,0 +1,15 @@
+19:44:15 | === SETUP: baza + flota botfleet=2 (BOT_CPUS=0.5) ===
+19:45:32 | flota gotowa: 2 botow (zadano 2)
+19:45:32 | === WARIANT old_normal (nginx=1.25.1-alpine, mode=normal) ===
+19:45:51 |   mode=attack size=1 rep=1 -> cpu_victim=17.25% cpu_bots=49.79% active=3 req_delta=487
+19:46:03 |   mode=attack size=2 rep=1 -> cpu_victim=35.13% cpu_bots=103.96% active=4 req_delta=538
+19:46:05 | === WARIANT old_hardened (nginx=1.25.1-alpine, mode=hardened) ===
+19:46:21 |   mode=attack size=1 rep=1 -> cpu_victim=16.93% cpu_bots=50.24% active=2 req_delta=220
+19:46:32 |   mode=attack size=2 rep=1 -> cpu_victim=20.38% cpu_bots=96.88% active=3 req_delta=389
+19:46:34 | === WARIANT new_normal (nginx=1.27-alpine, mode=normal) ===
+19:47:05 |   mode=attack size=1 rep=1 -> cpu_victim=16.12% cpu_bots=49.04% active=2 req_delta=240
+19:47:17 |   mode=attack size=2 rep=1 -> cpu_victim=30.17% cpu_bots=102.83% active=3 req_delta=374
+19:47:19 | === WARIANT new_hardened (nginx=1.27-alpine, mode=hardened) ===
+19:47:33 |   mode=attack size=1 rep=1 -> cpu_victim=16.11% cpu_bots=50.86% active=2 req_delta=176
+19:47:43 |   mode=attack size=2 rep=1 -> cpu_victim=25.83% cpu_bots=105.90% active=4 req_delta=394
+19:47:46 | === MATRYCA GOTOWA -> /c/Users/Bartek/Desktop/ddos/lab-results/smoketest/raw.csv ===

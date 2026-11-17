@@ -1,0 +1,9 @@
+mode,variant,size,cpu_victim_mean,cpu_victim_std,cpu_bots_mean,cpu_bots_std,ngx_req_delta_mean,ngx_req_delta_std,asymmetry_mean,asymmetry_std,reqs_per_conn_mean,n_reps
+attack,old_normal,1,17.25,,49.79,,487.0,,0.3464551114681663,,24.35,1
+attack,old_normal,2,35.13,,103.96,,538.0,,0.3379184301654483,,13.794871794871796,1
+attack,old_hardened,1,16.93,,50.24,,220.0,,0.3369824840764331,,11.0,1
+attack,old_hardened,2,20.38,,96.88,,389.0,,0.21036333608587943,,11.787878787878787,1
+attack,new_normal,1,16.12,,49.04,,240.0,,0.32871125611745516,,11.428571428571429,1
+attack,new_normal,2,30.17,,102.83,,374.0,,0.2933968686181076,,10.685714285714285,1
+attack,new_hardened,1,16.11,,50.86,,176.0,,0.3167518678725914,,10.352941176470589,1
+attack,new_hardened,2,25.83,,105.9,,394.0,,0.24390934844192633,,10.944444444444445,1
