@@ -7,7 +7,13 @@
 # hostem monitorowanym w Zabbixie: agent raportuje CPU, pamiec, load i ruch
 # sieciowy tego samego kontenera, ktory obrywa w czasie HTTP/2 Rapid Reset.
 
-FROM nginx:1.27-alpine
+# Wersja bazowego nginx jest parametryzowana, zeby mozna bylo zbudowac victima
+# na starszym, PODATNYM na HTTP/2 Rapid Reset nginx (<= 1.25.2, sprzed mitygacji
+# dodanej w 1.25.3). Domyslnie 1.27-alpine (zmitygowany). Nadpisanie:
+#   docker compose ... build --build-arg NGINX_VERSION=1.25.2-alpine
+# albo przez docker-compose.vuln.yml (ustawia ten arg automatycznie).
+ARG NGINX_VERSION=1.27-alpine
+FROM nginx:${NGINX_VERSION}
 
 # zabbix-agent2 jest w repo community Alpine (7.0.x, zgodny z serwerem 7.0 LTS).
 RUN apk add --no-cache zabbix-agent2

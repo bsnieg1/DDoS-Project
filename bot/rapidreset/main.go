@@ -24,6 +24,8 @@ var streamCounter uint32
 var waitTime int
 var delayTime int
 var sentHeaders, sentRSTs, recvFrames int32
+var recvGoAways, sendErrors int32
+var quiet bool
 var headerStart, headerEnd time.Time
 
 // Accept command line arguments
@@ -33,6 +35,7 @@ func init() {
 	flag.IntVar(&waitTime, "wait", 0, "Wait time in milliseconds between starting workers")
 	flag.IntVar(&delayTime, "delay", 0, "Delay in milliseconds between sending HEADERS and RST_STREAM")
 	flag.IntVar(&concurrencyLimit, "concurrency", 0, "Maximum number of concurrent worker routines")
+	flag.BoolVar(&quiet, "quiet", false, "Suppress per-frame logging; print only the final summary (for benchmarking)")
 	flag.Parse()
 }
 
@@ -59,20 +62,30 @@ func sendRequest(framer *http2.Framer, mu *sync.Mutex, path string, serverURL *u
 		EndStream:     true,
 		EndHeaders:    true,
 	}); err != nil {
-		fmt.Printf("[%d] Failed to send HEADERS: %s", streamID, err)
+		atomic.AddInt32(&sendErrors, 1)
+		if !quiet {
+			fmt.Printf("[%d] Failed to send HEADERS: %s\n", streamID, err)
+		}
 	} else {
 		atomic.AddInt32(&sentHeaders, 1)
-		fmt.Printf("[%d] Sent HEADERS on stream %d\n", streamID, streamID)
+		if !quiet {
+			fmt.Printf("[%d] Sent HEADERS on stream %d\n", streamID, streamID)
+		}
 	}
 
 	// Sleep for several ms before sending RST_STREAM
 	time.Sleep(time.Millisecond * time.Duration(delay))
 
 	if err := framer.WriteRSTStream(streamID, http2.ErrCodeCancel); err != nil {
-		fmt.Printf("[%d] Failed to send RST_STREAM: %s", streamID, err)
+		atomic.AddInt32(&sendErrors, 1)
+		if !quiet {
+			fmt.Printf("[%d] Failed to send RST_STREAM: %s\n", streamID, err)
+		}
 	} else {
 		atomic.AddInt32(&sentRSTs, 1)
-		fmt.Printf("[%d] Sent RST_STREAM on stream %d\n", streamID, streamID)
+		if !quiet {
+			fmt.Printf("[%d] Sent RST_STREAM on stream %d\n", streamID, streamID)
+		}
 	}
 
 }
@@ -83,6 +96,8 @@ func printSummary() {
 	fmt.Printf("\n--- Summary ---\n")
 	fmt.Printf("Frames sent: HEADERS = %d, RST_STREAM = %d\n", sentHeaders, sentRSTs)
 	fmt.Printf("Frames received: %d\n", recvFrames)
+	fmt.Printf("GOAWAY received: %d\n", recvGoAways)
+	fmt.Printf("Send errors (conn closed): %d\n", sendErrors)
 	fmt.Printf("Total time: %.2f seconds (%d rps)\n\n", elapsed, int(math.Round(float64(sentHeaders)/elapsed)))
 }
 
@@ -133,7 +148,14 @@ func main() {
 				fmt.Printf("Failed to read frame: %s", err)
 			} else {
 				atomic.AddInt32(&recvFrames, 1)
-				fmt.Printf("Received frame: %v\n", frame)
+				if _, ok := frame.(*http2.GoAwayFrame); ok {
+					// GOAWAY = serwer konczy polaczenie (np. mitygacja Rapid
+					// Reset w nginx >= 1.25.3 po zbyt wielu resetach).
+					atomic.AddInt32(&recvGoAways, 1)
+				}
+				if !quiet {
+					fmt.Printf("Received frame: %v\n", frame)
+				}
 			}
 		}
 	}()
