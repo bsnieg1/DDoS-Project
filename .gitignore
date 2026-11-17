@@ -1,0 +1,64 @@
+# === Sekrety / certyfikaty (NIGDY do repo) ===
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+victim/cert.pem
+victim/key.pem
+
+# === Sliver C2 - stan runtime ===
+c2/bin/
+c2/data/sliver.db
+c2/data/sliver.db-shm
+c2/data/sliver.db-wal
+c2/data/logs/
+c2/data/notifications/
+c2/data/configs/
+c2/data/traffic-encoders/
+c2/data/certs/
+
+# === Go (bot/rapidreset) ===
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bot/rapidreset/rapidreset
+bot/**/bin/
+
+# === Python (monitoring) ===
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === Docker / lokalne overridy ===
+# docker-compose.override.yml  # odkomentuj jeśli to plik lokalny dewelopera
+
+# === Edytor / OS ===
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Pliki tymczasowe MS Office ===
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# === Logi ===
+*.log
+logs/

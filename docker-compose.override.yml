@@ -1,0 +1,27 @@
+services:
+  victim:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+  bot:
+    build: ./bot
+    container_name: lab-bot
+    depends_on:
+      - victim
+    volumes:
+      - ./shared:/shared
+    networks:
+      - labnet
+  c2:
+    image: debian:bookworm-slim
+    container_name: lab-c2
+    volumes:
+      - ./c2/bin:/opt/sliver:ro
+      - ./c2/data:/root/.sliver
+      - ./shared:/shared
+    working_dir: /opt/sliver
+    command: ["sleep", "infinity"]
+    networks:
+      - labnet

@@ -1,0 +1,57 @@
+# Skalowalna pula dodatkowych maszyn-ofiar (fleet) do monitoringu w Zabbixie.
+# Kazda replika to ten sam obraz co victim (nginx HTTP/2 + zabbix-agent2), ale:
+#   - bez sztywnej nazwy kontenera -> usluge mozna skalowac (--scale),
+#   - z dynamiczna nazwa hosta (HostnameItem=system.hostname) -> unikalna per replika,
+#   - z HostMetadata=ddos-lab-pool -> serwer sam zaklada hosta (autoregistration).
+#
+# Wymaga warstwy monitoringu (docker-compose.monitoring.yml), bo korzysta z
+# obrazu lab-victim-zabbix oraz sieci labnet i serwera zabbix-server.
+#
+# Wlaczenie 5 maszyn:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.override.yml \
+#     -f docker-compose.monitoring.yml \
+#     -f docker-compose.victims.yml \
+#     up -d --build victim-node
+#
+# Inna liczba maszyn (np. 10):  dodaj  --scale victim-node=10
+# Najpierw jednorazowo wlacz regule autoregistration (patrz README-MONITORING.md):
+#   docker compose ... run --rm zabbix-autoreg
+
+services:
+  victim-node:
+    build: ./victim
+    image: lab-victim-zabbix:latest
+    # BRAK container_name -> usluga jest skalowalna.
+    restart: unless-stopped
+    environment:
+      # Czytelna, unikalna nazwa hosta: victim-<id kontenera>, np. victim-ab12cd34.
+      ZBX_HOSTNAME_PREFIX: "victim"
+      # Znacznik dla reguly autoregistration na serwerze.
+      ZBX_METADATA: "ddos-lab-pool"
+    networks:
+      - labnet
+    deploy:
+      # Domyslnie 5 maszyn; nadpiszesz przez  --scale victim-node=N
+      replicas: 5
+
+  # Jednorazowy setup: tworzy regule autoregistration, ktora automatycznie
+  # zaklada kazda zgloszona maszyne z HostMetadata "ddos-lab-pool",
+  # wrzuca ja do grupy "DDoS Lab Pool" i podpina szablon Linux.
+  zabbix-autoreg:
+    image: python:3.12-alpine
+    container_name: lab-zabbix-autoreg
+    profiles:
+      - provision
+    depends_on:
+      - zabbix-web
+    environment:
+      ZBX_URL: http://zabbix-web:8080/api_jsonrpc.php
+      ZBX_USER: Admin
+      ZBX_PASS: zabbix
+    volumes:
+      - ./monitoring:/scripts:ro
+    command: ["python", "/scripts/autoreg.py"]
+    networks:
+      - monnet
