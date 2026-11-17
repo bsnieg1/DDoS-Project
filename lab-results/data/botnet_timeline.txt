@@ -1,1 +1,28 @@
 16:26:54 | === CONFIG old/normal ===
+16:27:32 | size=1 -> CPU=2.6% active=2
+16:28:02 | size=2 -> CPU=6.4% active=1
+16:28:33 | size=3 -> CPU=11.9% active=2
+16:29:15 | size=4 -> CPU=5.4% active=3
+16:29:48 | size=5 -> CPU=12.6% active=2
+16:29:52 | CONFIG old/normal DONE
+16:29:54 | === CONFIG old/hardened ===
+16:30:30 | size=1 -> CPU=4.3% active=1
+16:30:59 | size=2 -> CPU=9.8% active=3
+16:31:33 | size=3 -> CPU=13.2% active=1
+16:32:05 | size=4 -> CPU=7.9% active=2
+16:32:37 | size=5 -> CPU=12.3% active=2
+16:32:41 | CONFIG old/hardened DONE
+16:32:46 | === CONFIG new/normal ===
+16:33:21 | size=1 -> CPU=8.0% active=1
+16:33:50 | size=2 -> CPU=11.7% active=2
+16:34:21 | size=3 -> CPU=7.5% active=1
+16:34:54 | size=4 -> CPU=14.9% active=3
+16:35:27 | size=5 -> CPU=14.5% active=2
+16:35:31 | CONFIG new/normal DONE
+16:35:34 | === CONFIG new/hardened ===
+16:36:11 | size=1 -> CPU=8.3% active=1
+16:36:39 | size=2 -> CPU=8.2% active=1
+16:37:09 | size=3 -> CPU=15.3% active=2
+16:37:40 | size=4 -> CPU=14.8% active=5
+16:38:12 | size=5 -> CPU=15.3% active=3
+16:38:16 | CONFIG new/hardened DONE
