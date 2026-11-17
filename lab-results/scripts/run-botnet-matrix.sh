@@ -143,10 +143,9 @@ run_config(){ # ver mode
   done
 }
 
-run_config old normal
-run_config old hardened
-run_config new normal
-run_config new hardened
+# CONFIGS pozwala zawęzić zestaw (np. CONFIGS="old/normal" do eskalacji na podatnej konfiguracji)
+CONFIGS="${CONFIGS:-old/normal old/hardened new/normal new/hardened}"
+for c in $CONFIGS; do run_config "${c%/*}" "${c#*/}"; done
 
 log "MATRYCA GOTOWA -> $CSV"
 echo; echo "=== WYNIK: ile botów trzeba (CPU ofiary / siła ataku / dostępność usera) ==="
