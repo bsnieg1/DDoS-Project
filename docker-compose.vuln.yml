@@ -1,0 +1,51 @@
+# Tryb PODATNY victima — nginx sprzed mitygacji HTTP/2 Rapid Reset (CVE-2023-44487).
+#
+# Po co: domyslny obraz (nginx 1.27) ma wbudowany throttling resetow (dodany w
+# 1.25.3, 24 paz 2023), wiec PoC `rapidreset` nie wywola realnej degradacji.
+# Ta nakladka buduje victima na starszym nginx 1.25.2-alpine (jeszcze bez tej
+# obrony) i podklada CELOWO oslabiona konfiguracje (victim/nginx.vuln.conf:
+# wysokie keepalive_requests -> flood leci bez zamykania polaczenia).
+#
+# UWAGA: ta nakladka BUDUJE victima z ./victim/Dockerfile (obraz zawiera takze
+# zabbix-agent2). W trybie bez monitoringu agent po prostu stoi bezczynnie —
+# nie wplywa to na zachowanie HTTP/2. Dzieki temu ten sam obraz dziala i w
+# wariancie monitorowanym, i w samym bazowym labie.
+#
+# --- Uzycie ---
+#
+# A) Pelny pokaz: podatny victim + atak + detekcja w Zabbixie
+#    docker compose \
+#      -f docker-compose.yml \
+#      -f docker-compose.override.yml \
+#      -f docker-compose.monitoring.yml \
+#      -f docker-compose.vuln.yml \
+#      up -d --build
+#
+# B) Szybki test bez monitoringu (sam podatny victim + bot + loadgen)
+#    docker compose \
+#      -f docker-compose.yml \
+#      -f docker-compose.override.yml \
+#      -f docker-compose.vuln.yml \
+#      up -d --build
+#
+# Odpalenie ataku z kontenera bot (PoC rapidreset):
+#    docker compose exec bot rapidreset -url https://victim:443 \
+#      -requests 20000 -concurrency 200
+#
+# Porownanie z obrona: zamien  -f docker-compose.vuln.yml  na
+# -f docker-compose.hardening.yml  (albo usun nakladke vuln = nginx 1.27
+# ze zmitygowanym stosem HTTP/2) i powtorz ten sam atak.
+
+services:
+  victim:
+    build:
+      context: ./victim
+      args:
+        # Ostatni nginx PRZED mitygacja Rapid Reset (1.25.3).
+        # Wspiera juz skladnie `http2 on;` (wprowadzona w 1.25.1).
+        NGINX_VERSION: "1.25.2-alpine"
+    image: lab-victim-vuln:latest
+    volumes:
+      # Nadpisuje montaz nginx.conf (ten sam cel /etc/nginx/nginx.conf)
+      # wariantem podatnym. Certy i html z bazy zostaja.
+      - ./victim/nginx.vuln.conf:/etc/nginx/nginx.conf:ro
