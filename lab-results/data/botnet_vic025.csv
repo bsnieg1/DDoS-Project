@@ -1,0 +1,4 @@
+config,ver,hard,size,cpu_pct,active,atk_rst_s,atk_hdr_s,legit_ok,legit_tot,legit_avg_s,legit_ok_pct
+old/normal,old,normal,20,20.5,9,75348,11629,11,12,0.673,92
+old/normal,old,normal,35,23.5,8,105553,18549,10,12,1.444,83
+old/normal,old,normal,50,23.2,8,122419,22920,10,12,1.678,83
