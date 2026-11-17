@@ -1,0 +1,97 @@
+== vuln_10 (h2load c=4) ==
+finished in 30.01s, 133.33 req/s, 45.84KB/s
+requests: 4252 total, 4252 started, 4252 done, 4000 succeeded, 252 failed, 252 errored, 0 timeout
+status codes: 4000 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      50.87       52.44       51.64        0.68    50.00%
+
+== vuln_20 (h2load c=10) ==
+finished in 30.01s, 333.33 req/s, 114.60KB/s
+requests: 10630 total, 10630 started, 10630 done, 10000 succeeded, 630 failed, 630 errored, 0 timeout
+status codes: 10000 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      34.99       96.87       52.87       27.62    70.00%
+
+== vuln_40 (h2load c=25) ==
+finished in 30.01s, 758.90 req/s, 260.92KB/s
+requests: 23523 total, 24355 started, 23523 done, 22767 succeeded, 756 failed, 756 errored, 0 timeout
+status codes: 22767 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      25.60       78.05       44.55       19.52    80.00%
+
+== vuln_55 (h2load c=35) ==
+finished in 30.01s, 991.37 req/s, 340.85KB/s
+requests: 30937 total, 31962 started, 30937 done, 29741 succeeded, 1196 failed, 1196 errored, 0 timeout
+status codes: 29741 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      21.33       89.46       41.29       22.22    88.57%
+
+== vuln_80 (h2load c=50) ==
+finished in 30.02s, 1232.30 req/s, 423.69KB/s
+requests: 37282 total, 40164 started, 37282 done, 36969 succeeded, 313 failed, 313 errored, 0 timeout
+status codes: 36969 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      21.33       74.27       28.48       14.80    90.00%
+
+== vuln_rr (bot rapid-reset) ==
+reconnecty=29 HEADERS=60073 RST_STREAM=561975
+
+== vuln_10 (h2load) ==
+finished in 30.02s, 1232.30 req/s, 423.69KB/s
+requests: 37282 total, 40164 started, 37282 done, 36969 succeeded, 313 failed, 313 errored, 0 timeout
+status codes: 36969 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      21.33       74.27       28.48       14.80    90.00%
+
+== hard_10 (h2load c=4) ==
+
+== hard_20 (h2load c=10) ==
+finished in 30.02s, 33.33 req/s, 8.03KB/s
+requests: 1285 total, 1630 started, 1285 done, 45 succeeded, 1240 failed, 285 errored, 0 timeout
+status codes: 45 2xx, 0 3xx, 955 4xx, 0 5xx
+req/s           :     378.88      507.27      438.54       44.90    70.00%
+
+== hard_40 (h2load c=25) ==
+finished in 30.04s, 83.33 req/s, 19.83KB/s
+requests: 3278 total, 4075 started, 3278 done, 45 succeeded, 3233 failed, 778 errored, 0 timeout
+status codes: 45 2xx, 0 3xx, 2455 4xx, 0 5xx
+req/s           :     329.93      503.98      406.30       53.73    52.00%
+
+== hard_55 (h2load c=35) ==
+finished in 30.04s, 116.67 req/s, 27.70KB/s
+requests: 4768 total, 5705 started, 4768 done, 47 succeeded, 4721 failed, 1268 errored, 0 timeout
+status codes: 47 2xx, 0 3xx, 3453 4xx, 0 5xx
+req/s           :     240.42      605.10      296.86       81.13    91.43%
+
+== hard_80 (h2load c=50) ==
+finished in 150.02s, 6.67 req/s, 1.62KB/s
+requests: 1395 total, 1630 started, 1395 done, 60 succeeded, 1335 failed, 395 errored, 0 timeout
+status codes: 60 2xx, 0 3xx, 940 4xx, 0 5xx
+req/s           :     100.87      102.97      101.86        0.72    70.00%
+finished in 30.04s, 166.67 req/s, 39.51KB/s
+requests: 6433 total, 8150 started, 6433 done, 49 succeeded, 6384 failed, 1433 errored, 0 timeout
+status codes: 49 2xx, 0 3xx, 4951 4xx, 0 5xx
+req/s           :     197.75      363.84      221.54       38.27    94.00%
+
+== vuln_20 (h2load) ==
+finished in 150.02s, 6.67 req/s, 1.62KB/s
+requests: 1395 total, 1630 started, 1395 done, 60 succeeded, 1335 failed, 395 errored, 0 timeout
+status codes: 60 2xx, 0 3xx, 940 4xx, 0 5xx
+req/s           :     100.87      102.97      101.86        0.72    70.00%
+finished in 30.04s, 166.67 req/s, 39.51KB/s
+requests: 6433 total, 8150 started, 6433 done, 49 succeeded, 6384 failed, 1433 errored, 0 timeout
+status codes: 49 2xx, 0 3xx, 4951 4xx, 0 5xx
+req/s           :     197.75      363.84      221.54       38.27    94.00%
+
+== vuln_40 (h2load) ==
+Error response from daemon: container 1d87c6254ad72e9d8360e87e55cf13ee02be809aff59cb994687d05a0cd734af is not running
+
+== vuln_55 (h2load) ==
+finished in 150.50s, 166.67 req/s, 57.30KB/s
+requests: 26575 total, 26575 started, 26575 done, 25000 succeeded, 1575 failed, 1575 errored, 0 timeout
+status codes: 25000 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :      11.70       14.64       13.58        0.84    76.00%
+
+== vuln_80 (h2load) ==
+finished in 150.06s, 333.33 req/s, 114.60KB/s
+requests: 52560 total, 53150 started, 52560 done, 50000 succeeded, 2560 failed, 2560 errored, 0 timeout
+status codes: 50000 2xx, 0 3xx, 0 4xx, 0 5xx
+req/s           :     115.60      231.39      135.78       33.29    88.00%
+
+== vuln_rapidreset (bot) ==
+reconnecty=16 HEADERS=28474 RST_STREAM=311292
+

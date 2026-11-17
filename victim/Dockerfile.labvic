@@ -1,0 +1,11 @@
+ARG BASE=nginx:1.27-alpine
+FROM ${BASE}
+COPY nginx.conf /conf/normal.conf
+COPY nginx.hardened.conf /conf/hardened.conf
+COPY cert.pem /etc/nginx/cert.pem
+COPY key.pem /etc/nginx/key.pem
+COPY html /usr/share/nginx/html
+COPY entry.labvic.sh /entry.sh
+RUN chmod +x /entry.sh
+ENTRYPOINT ["/entry.sh"]
+CMD ["nginx","-g","daemon off;"]

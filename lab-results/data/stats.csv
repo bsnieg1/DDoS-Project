@@ -1,0 +1,13 @@
+scenario,mode,level,attacker,dur,total_log,s2xx,s429,other
+baseline,vuln,idle,idle,20,0,0,0,0
+vuln_10,vuln,10,4,30,4252,4000,0,252
+vuln_20,vuln,20,10,30,10630,10000,0,630
+vuln_40,vuln,40,25,30,23523,22767,0,756
+vuln_55,vuln,55,35,30,30937,29741,0,1196
+vuln_80,vuln,80,50,30,37282,36969,0,313
+vuln_rr,vuln,rr,bot,40,0,0,0,0
+hard_10,hard,10,4,30,0,0,0,0
+hard_20,hard,20,10,30,1285,45,955,285
+hard_40,hard,40,25,30,3278,45,2455,778
+hard_55,hard,55,35,30,4768,47,3453,1268
+hard_80,hard,80,50,30,6433,49,4951,1433

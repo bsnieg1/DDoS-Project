@@ -1,0 +1,56 @@
+2026-11-15 21:01:25 | START baseline (baseline idle dur=20s)
+2026-11-15 21:01:45 | END   baseline
+2026-11-15 21:01:45 | STATS baseline: total=0 2xx=0 4xx/429=0
+2026-11-15 21:01:54 | START vuln_10 (mode=vuln load~10% c=4 dur=30s)
+2026-11-15 21:02:24 | END   vuln_10
+2026-11-15 21:02:25 | STATS vuln_10: total=4252 2xx=4000 4xx/429=0
+2026-11-15 21:02:34 | START vuln_20 (mode=vuln load~20% c=10 dur=30s)
+2026-11-15 21:03:04 | END   vuln_20
+2026-11-15 21:03:05 | STATS vuln_20: total=10630 2xx=10000 4xx/429=0
+2026-11-15 21:03:13 | START vuln_40 (mode=vuln load~40% c=25 dur=30s)
+2026-11-15 21:03:45 | END   vuln_40
+2026-11-15 21:03:46 | STATS vuln_40: total=23523 2xx=22767 4xx/429=0
+2026-11-15 21:03:54 | START vuln_55 (mode=vuln load~55% c=35 dur=30s)
+2026-11-15 21:04:24 | END   vuln_55
+2026-11-15 21:04:25 | STATS vuln_55: total=30937 2xx=29741 4xx/429=0
+2026-11-15 21:04:34 | START vuln_80 (mode=vuln load~80% c=50 dur=30s)
+2026-11-15 21:05:04 | END   vuln_80
+2026-11-15 21:05:06 | STATS vuln_80: total=37282 2xx=36969 4xx/429=0
+2026-11-15 21:05:15 | START vuln_rr (mode=vuln bot rapid-reset dur=40s)
+2026-11-15 21:05:56 | END   vuln_rr
+2026-11-15 21:05:56 | STATS vuln_rr: total=0 2xx=0 4xx/429=0
+2026-11-15 21:06:35 | END   vuln_10
+2026-11-15 21:06:36 | GAP 35s
+2026-11-15 21:06:41 | START hard_10 (mode=hard load~10% c=4 dur=30s)
+2026-11-15 21:07:11 | START vuln_20 (mode=vuln load~20% c=10 dur=150s)
+2026-11-15 21:07:11 | END   hard_10
+2026-11-15 21:07:13 | STATS hard_10: total=0 2xx=0 4xx/429=0
+2026-11-15 21:07:21 | START hard_20 (mode=hard load~20% c=10 dur=30s)
+2026-11-15 21:07:51 | END   hard_20
+2026-11-15 21:07:52 | STATS hard_20: total=1285 2xx=45 4xx/429=955
+2026-11-15 21:08:01 | START hard_40 (mode=hard load~40% c=25 dur=30s)
+2026-11-15 21:08:31 | END   hard_40
+2026-11-15 21:08:32 | STATS hard_40: total=3278 2xx=45 4xx/429=2455
+2026-11-15 21:08:41 | START hard_55 (mode=hard load~55% c=35 dur=30s)
+2026-11-15 21:09:11 | END   hard_55
+2026-11-15 21:09:12 | STATS hard_55: total=4768 2xx=47 4xx/429=3453
+2026-11-15 21:09:21 | START hard_80 (mode=hard load~80% c=50 dur=30s)
+2026-11-15 21:09:51 | END   hard_80
+2026-11-15 21:09:52 | STATS hard_80: total=6433 2xx=49 4xx/429=4951
+2026-11-15 21:16:16 | END   vuln_20
+2026-11-15 21:16:17 | GAP 35s
+2026-11-15 21:17:08 | START vuln_40 (mode=vuln load~40% c=25 dur=150s)
+2026-11-17 15:59:30 | END   vuln_40
+2026-11-17 15:59:31 | GAP 35s
+2026-11-17 16:00:07 | START vuln_55 (mode=vuln load~55% c=35 dur=150s)
+2026-11-17 16:02:39 | END   vuln_55
+2026-11-17 16:02:40 | GAP 35s
+2026-11-17 16:03:15 | START vuln_80 (mode=vuln load~80% c=50 dur=150s)
+2026-11-17 16:05:48 | END   vuln_80
+2026-11-17 16:05:48 | GAP 35s
+2026-11-17 16:06:23 | START vuln_rapidreset (bot, 150s)
+2026-11-17 16:08:55 | END vuln_rapidreset
+2026-11-17 16:12:39 | GAP 35s
+2026-11-17 16:13:14 | SWITCH -> hardened
+2026-11-17 16:13:19 | hardened aktywny (po 0s)
+2026-11-17 16:13:29 | START hard_10 (mode=hard load~10% c=4 dur=150s)

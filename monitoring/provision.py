@@ -50,7 +50,7 @@ def call(method, params=None, auth=True):
     req.add_header("Content-Type", "application/json-rpc")
     if auth and _token:
         req.add_header("Authorization", "Bearer " + _token)
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=120) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     if "error" in body:
         raise RuntimeError("%s: %s" % (method, body["error"]))
