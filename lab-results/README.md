@@ -38,28 +38,46 @@ Najważniejsze: tryb utwardzony trzyma CPU ofiary na ~2% przy każdym natężeni
 
 ### 2. Ofensywny / botnet sterowany przez C2 (ten katalog)
 Flota botów (osobne kontenery = osobne IP) odpala **autentyczny Rapid Reset**
-przeciw ofierze; obciążenie skalowane **rozmiarem botnetu** (1→5) dla 4 konfiguracji:
-nienałatany/załatany nginx × z hardeningiem/bez. Dane: `data/botnet.csv`.
+przeciw ofierze; obciążenie skalowane **rozmiarem botnetu** (1 → 5 → 10 → 20 → 30)
+dla 4 konfiguracji: nienałatany/załatany nginx × z hardeningiem/bez. Dane: `data/botnet.csv`.
+
+Pytanie eksperymentu ma wartość merytoryczną: **ile botów / jaki agregatowy RPS
+trzeba, żeby serwer przestał obsługiwać prawdziwych użytkowników.** Dlatego dla
+każdej pary (konfiguracja × rozmiar) mierzymy JEDNOCZEŚNIE:
+- **[A] siłę ognia atakującego** — zagregowany `RST_STREAM/s` i `HEADERS/s` z floty,
+- **[B] wpływ na ofiarę** — CPU% + aktywne połączenia,
+- **[C] dostępność dla usera** — równoległa sonda legalnego klienta (h2load, 2 poł.):
+  ile req/s i % żądań 2xx udaje się obsłużyć **w trakcie ataku**. Spadek [C] = atak skuteczny.
+
+To daje **próg**: przy ilu botach legalny klient zaczyna dostawać błędy / spada mu
+przepustowość — i jak ten próg różni się między podatnym, załatanym i hardened nginx.
 
 ## Jak odtworzyć matrycę botnet (mocna maszyna)
 
 ```bash
-# 1. Podnieś bazowy lab (sieć labnet + loadgen + obraz bota + c2/Sliver)
+# 1. Podnieś bazowy lab (sieć labnet + loadgen/h2load + obraz bota + c2/Sliver)
 docker compose up -d --build
 
-# 2. Odpal matrycę. Na mocnym CPU podnieś limity, żeby flota realnie dociążyła ofiarę:
-BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800 bash lab-results/scripts/run-botnet-matrix.sh
+# 2. Odpal matrycę z pełnym zakresem botnetu i realnymi limitami CPU:
+SIZES="1 5 10 20 30" BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800 \
+  bash lab-results/scripts/run-botnet-matrix.sh
 ```
 
 Skrypt sam zbuduje obrazy ofiary (`labvic:old` = nginx 1.25.1, `labvic:new` = 1.27),
-postawi flotę `lab-bot1..5` (osobne IP), przejdzie 4 konfiguracje × rozmiary 1..5
-i zapisze `data/botnet.csv` + wydrukuje tabelę CPU. Parametry (zmienne środowiskowe)
-opisane w nagłówku skryptu.
+postawi flotę `lab-bot1..N` (osobne IP), przejdzie 4 konfiguracje × rozmiary z `SIZES`
+i zapisze `data/botnet.csv` (kolumny: `cpu_pct, active, atk_rst_s, atk_hdr_s,
+legit_rps, legit_2xx, legit_fail, legit_ok_pct`) + wydrukuje podsumowanie
+„ile botów trzeba". Parametry (zmienne środowiskowe) opisane w nagłówku skryptu.
 
-> Uwaga o magnitudzie: Rapid Reset jest **tani w obsłudze dla nginx** (anulowane
-> strumienie), więc na słabym hoście (4 rdzenie) flota nie nasyca ofiary i wyniki
-> są niskie/zaszumione — to realna odporność nginx. Na maszynie z większą liczbą
-> rdzeni (i wyższym `BOT_CPUS`) krzywa CPU vs rozmiar botnetu jest wyższa i czystsza.
+> **Pamięć/rdzenie:** 30 botów + ofiara + loadgen to ~32 kontenery — wymaga mocnej
+> maszyny. Na 4-rdzeniowym/8 GB hoście użyj `SIZES="1 2 3"` (wyniki będą niskie).
+>
+> **Uczciwa uwaga o magnitudzie (zgodna z blogiem NGINX/F5):** Rapid Reset jest
+> **tani w obsłudze dla nginx** (anulowane strumienie kosztują mało), a załatany nginx
+> go wykrywa i zrywa połączenie. Dlatego sam „% CPU" bywa mylącym miernikiem — stąd
+> kolumna **[C] dostępność legalnego usera** jako właściwy wskaźnik sukcesu. Możliwe,
+> że załatany+hardened nginx utrzyma dostępność nawet przy 30 botach — **to też jest
+> wartościowy, cytowalny wniosek** (Rapid Reset nie jest cudowną bronią przeciw nginx).
 
 ## Faza C2 — atak sterowany przez Sliver (procedura)
 

