@@ -1,5 +1,11 @@
 ARG BASE=nginx:1.27-alpine
 FROM ${BASE}
+# zabbix-agent2 z repo community Alpine - zeby victim raportowal CPU/pamiec/siec
+# do Zabbixa (szablon "Linux by Zabbix agent"), tak jak zwykly victim/Dockerfile.
+# Dzieki temu wariant labvic (kontrola wersji nginx + hardeningu) jest TEZ
+# pelnoprawnym hostem monitorowanym - potrzebne do obserwacji na zywo w GUI.
+RUN apk add --no-cache zabbix-agent2
+COPY zabbix_agent2.conf /etc/zabbix/zabbix_agent2.conf
 COPY nginx.conf /conf/normal.conf
 COPY nginx.hardened.conf /conf/hardened.conf
 COPY cert.pem /etc/nginx/cert.pem
@@ -7,6 +13,7 @@ COPY key.pem /etc/nginx/key.pem
 COPY html /usr/share/nginx/html
 COPY entry.labvic.sh /entry.sh
 RUN chmod +x /entry.sh
+EXPOSE 10050
 ENTRYPOINT ["/entry.sh"]
 # -c wskazuje explicite na /etc/nginx/active.conf (patrz entry.labvic.sh) -
 # unika kolizji z bind-mountem /etc/nginx/nginx.conf, gdy ten obraz jest

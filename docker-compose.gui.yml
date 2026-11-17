@@ -1,0 +1,53 @@
+# Panel GUI (localhost:8090) do dynamicznego skalowania floty botow + podgladu
+# na zywo. Steruje WLASNA pula kontenerow-botow (gui-bot-N) przez zamontowany
+# docker socket. Monitoring (CPU/polaczenia ofiary w czasie) ogladasz w Zabbixie.
+#
+# Wymaga: zbudowanego obrazu bota (ddos-lab-botfleet:latest lub ddos-lab-bot)
+# oraz dzialajacej sieci labnet z ofiara "victim". Typowy flow:
+#
+#   # 1. Ofiara Z AGENTEM Zabbix + stos monitoringu (victim ma teraz agenta
+#   #    takze w wariancie labvic - patrz victim/Dockerfile.labvic):
+#   NGINX_OLD=1.25.1-alpine VICTIM_MODE=normal \
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.monitoring.yml -f docker-compose.labvic.yml \
+#     up -d --build
+#
+#   # 2. Provisioning Zabbixa (host victim + szablony Linux/Nginx) - raz:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.monitoring.yml run --rm zabbix-provision
+#
+#   # 3. Panel GUI:
+#   docker compose -f docker-compose.gui.yml up -d --build
+#
+#   # Otworz http://localhost:8090  (suwak = liczba botow, Fire/Stop),
+#   # a obok http://localhost:8080  (Zabbix, Admin/zabbix) na metryki.
+#
+# Boty tworzone przez panel sa cpuset-przypiete do rdzeni 2-11 (victim trzyma
+# 0,1 - patrz docker-compose.labvic.yml), wiec flota nie odbiera CPU ofierze.
+
+services:
+  botgui:
+    build: ./gui
+    image: ddos-lab-botgui:latest
+    container_name: lab-botgui
+    environment:
+      # Siec glownego stosu (docker-compose.yml ma name: ddos-lab -> ddos-lab_labnet).
+      # NIE uzywamy COMPOSE_PROJECT_NAME: przy ladowaniu docker-compose.gui.yml
+      # jego wlasny project name ("ddos") nadpisalby zmienna i dalby zla siec.
+      # Nadpisywalne jawnie przez LABNET w srodowisku.
+      LABNET: "${LABNET:-ddos-lab_labnet}"
+      BOT_IMAGE: "${BOT_IMAGE:-ddos-lab-botfleet:latest}"
+      VICTIM: "victim:443"
+      BOT_CPUSET: "${BOT_CPUSET:-2-11}"
+      BOT_CPUS: "${BOT_CPUS:-0.1}"
+      VICTIM_CTR: "lab-victim"
+      ZABBIX_URL: "${ZABBIX_URL:-http://localhost:8080}"
+      PORT: "8090"
+      MAX_BOTS: "${MAX_BOTS:-100}"
+    volumes:
+      # Socket demona hosta - panel zarzadza kontenerami-botami.
+      # Na Docker Desktop (Windows/Mac) ta sciezka dziala tak samo.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8090:8090"
+    restart: unless-stopped

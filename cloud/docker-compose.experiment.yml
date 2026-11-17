@@ -1,0 +1,125 @@
+# Jeden stos eksperymentu: victim (parametryzowany wariant) + Zabbix + sonda.
+# Uzywany 4 razy z roznymi plikami .env (env/exp1.env ... env/exp4.env).
+# Kazdy eksperyment = osobny projekt compose = osobna siec + Zabbix + dane.
+#
+# Uzycie (run-experiments.sh robi to automatycznie):
+#   docker compose --env-file env/exp1.env -f docker-compose.experiment.yml up -d
+
+services:
+  victim:
+    build:
+      context: ./victim
+      dockerfile: Dockerfile.labvic
+      args:
+        BASE: "nginx:${NGINX_VER:-1.25.1-alpine}"
+    container_name: ${COMPOSE_PROJECT_NAME}-victim
+    environment:
+      MODE: "${VICTIM_MODE:-normal}"
+    cpuset: "0,1"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 512M
+    volumes:
+      - ./victim/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./victim/cert.pem:/etc/nginx/cert.pem:ro
+      - ./victim/key.pem:/etc/nginx/key.pem:ro
+      - ./victim/html:/usr/share/nginx/html:ro
+    networks:
+      - labnet
+    restart: unless-stopped
+
+  probe:
+    build: ./probe
+    image: lab-probe:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-probe
+    cpuset: "2"
+    environment:
+      TARGET: "https://victim/"
+      RATE: "10"
+      WINDOW: "2"
+      CSV: "/data/probe.csv"
+    volumes:
+      - ./results/${EXP_LABEL:-exp}:/data
+    networks:
+      - labnet
+    depends_on:
+      - victim
+    restart: unless-stopped
+
+  zabbix-db:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-zabbix-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_pg_pw
+      POSTGRES_DB: zabbix
+    volumes:
+      - zabbix-db-data:/var/lib/postgresql/data
+    networks:
+      - labnet
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.0-latest
+    container_name: ${COMPOSE_PROJECT_NAME}-zabbix-server
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_pg_pw
+      POSTGRES_DB: zabbix
+    volumes:
+      - ./monitoring/alertscripts:/usr/lib/zabbix/alertscripts:ro
+    depends_on:
+      - zabbix-db
+    networks:
+      - labnet
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest
+    container_name: ${COMPOSE_PROJECT_NAME}-zabbix-web
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_pg_pw
+      POSTGRES_DB: zabbix
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: Europe/Warsaw
+    depends_on:
+      - zabbix-db
+      - zabbix-server
+    ports:
+      - "${ZABBIX_PORT:-8080}:8080"
+    networks:
+      - labnet
+      - monnet
+
+  zabbix-provision:
+    image: python:3.12-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-zabbix-provision
+    profiles:
+      - provision
+    depends_on:
+      - zabbix-web
+    environment:
+      ZBX_URL: http://zabbix-web:8080/api_jsonrpc.php
+      ZBX_USER: Admin
+      ZBX_PASS: zabbix
+    volumes:
+      - ./monitoring:/scripts:ro
+    command: ["python", "/scripts/provision.py"]
+    networks:
+      - labnet
+      - monnet
+
+networks:
+  labnet:
+    internal: true
+  monnet:
+    driver: bridge
+
+volumes:
+  zabbix-db-data:

@@ -29,7 +29,16 @@
 #   REQ=2000 CONC=100  parametry per-bot na jedno uderzenie (STALE w calej matrycy,
 #                      zmienna jest tylko N - tak, by izolowac efekt rozmiaru botnetu)
 #   WARM=3 WIN=4 NWIN=2 GAP=3   okna pomiarowe (sekundy)
-#   BOT_CPUS=0.5 VIC_CPUS=1.0   limity zasobow
+#   BOT_CPUS=0.5 VIC_CPUS=2     limity CPU (VIC_CPUS musi sie zgadzac z
+#                               worker_processes w victim/nginx*.conf!)
+#
+# IZOLACJA RDZENI: victim jest przypiety do rdzeni 0,1, flota do 2-11
+# (docker-compose.labvic.yml / docker-compose.botnet.yml, cpuset). Dzieki
+# temu BOT_CPUS x max(SIZES) moze bezpiecznie przekraczac liczbe rdzeni
+# dostepnych flocie (kontenery floty beda sie throttlowac MIEDZY SOBA, co
+# jest OK i realistyczne - ale NIGDY nie odbiora CPU ofierze). Mimo to, dla
+# czytelnych wynikow, trzymaj BOT_CPUS x max(SIZES) w okolicy liczby rdzeni
+# przypisanych flocie (np. 10 rdzeni -> BOT_CPUS=0.1 dla SIZES do 100).
 #
 # Wymaga: docker compose up -d --build (bazowy lab) NIE jest wymagane z wyprzedzeniem -
 # skrypt sam buduje/startuje wszystko, co potrzebuje.
@@ -48,7 +57,7 @@ REQ="${REQ:-2000}"
 CONC="${CONC:-100}"
 WARM="${WARM:-3}"; WIN="${WIN:-4}"; NWIN="${NWIN:-2}"; GAP="${GAP:-3}"
 BOT_CPUS="${BOT_CPUS:-0.5}"
-VIC_CPUS="${VIC_CPUS:-1.0}"
+VIC_CPUS="${VIC_CPUS:-2}"
 
 NMAX=0; for s in $SIZES; do [ "$s" -gt "$NMAX" ] && NMAX=$s; done
 DUR=$((WARM + WIN*NWIN + 2))
@@ -147,8 +156,8 @@ stop_bots() {
 run_variant() { # $1=label $2=ver(nginx tag) $3=mode-hardening(normal|hardened)
   local label="$1" ver="$2" hard="$3"
   log "=== WARIANT $label (nginx=$ver, mode=$hard) ==="
-  NGINX_OLD="$ver" VICTIM_MODE="$hard" dc build victim >/dev/null 2>&1
-  NGINX_OLD="$ver" VICTIM_MODE="$hard" dc up -d --force-recreate victim >/dev/null 2>&1
+  NGINX_OLD="$ver" VICTIM_MODE="$hard" VIC_CPUS="$VIC_CPUS" dc build victim >/dev/null 2>&1
+  NGINX_OLD="$ver" VICTIM_MODE="$hard" VIC_CPUS="$VIC_CPUS" dc up -d --force-recreate victim >/dev/null 2>&1
   if ! wait_victim; then
     log "BLAD: victim nie wstal dla $label - pomijam"
     return

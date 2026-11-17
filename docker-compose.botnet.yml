@@ -27,6 +27,11 @@ services:
     # (ten sam wzorzec co docker-compose.victims.yml / victim-node).
     networks:
       - labnet
+    # Przypiete do rdzeni 2-11 (NIE 0,1 - te sa zarezerwowane dla victima,
+    # patrz docker-compose.labvic.yml). Flota NIE MOZE odebrac CPU ofierze
+    # niezaleznie od liczby kontenerow - fizyczna izolacja, nie tylko limit.
+    # Dostosuj do wlasnego hosta (`docker info --format '{{.NCPU}}'`).
+    cpuset: "2-11"
     deploy:
       resources:
         limits:

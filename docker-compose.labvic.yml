@@ -31,6 +31,19 @@
 #   NGINX_OLD     wersja bazowego obrazu nginx (domyslnie 1.25.1-alpine,
 #                 ostatni przed mitygacja resetow w 1.25.3)
 #   VICTIM_MODE   normal | hardened (domyslnie normal)
+#   VIC_CPUS      limit CPU victima (domyslnie 2) - UWAGA: musi sie zgadzac
+#                 z `worker_processes` w victim/nginx*.conf (tam na sztywno 2),
+#                 inaczej nginx znow przeszacuje liczbe workerow wzgledem
+#                 realnego budzetu cgroup.
+#
+# IZOLACJA RDZENI (cpuset): victim dostaje rdzenie 0,1 NA WYLACZNOSC. Flota
+# botow (docker-compose.botnet.yml) jest przypieta do rdzeni 2-11. Dzieki temu
+# wiele kontenerow floty NIE MOZE odebrac CPU ofierze niezaleznie od ich
+# liczby - kazda strona ma fizycznie oddzielona pule. Bez tego docker-compose
+# CPU limity to tylko gorny sufit w WSPOLNEJ puli rdzeni hosta, co przy duzej
+# flocie (np. 100 botow) powodowalo zanizone/zaszumione pomiary CPU% ofiary.
+# Dostosuj zakres rdzeni do wlasnego hosta (sprawdz: `docker info --format
+# '{{.NCPU}}'`); ponizej zalozono 12-rdzeniowy host.
 
 services:
   victim:
@@ -42,6 +55,12 @@ services:
     image: lab-victim-labvic:latest
     environment:
       MODE: "${VICTIM_MODE:-normal}"
+    cpuset: "0,1"
+    deploy:
+      resources:
+        limits:
+          cpus: "${VIC_CPUS:-2}"
+          memory: 512M
     # UWAGA: docker-compose.yml (baza) bind-montuje ./victim/nginx.conf jako
     # read-only na /etc/nginx/nginx.conf. Compose SCALA listy wolumenow miedzy
     # plikami (nie da sie ich tu "wyzerowac" przez volumes: []), wiec ten bind
