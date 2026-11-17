@@ -180,7 +180,30 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:.8rem;paddi
   </section>
 
   <section>
-    <h2>Pełna matryca wyników</h2>
+    <h2>Tor 2: Botnet sterowany przez C2 (Sliver)</h2>
+    <p class="lede">Drugi eksperyment: flota botów (osobne kontenery = osobne IP) odpala <b>autentyczny Rapid Reset</b> przeciw ofierze, a obciążenie skalowane jest <b>rozmiarem botnetu</b> (1→5) dla czterech konfiguracji: nienаłatany nginx 1.25.1 / załatany 1.27, każdy z hardeningiem i bez. Atak odpalany z konsoli <b>C2 Sliver</b> (kanał mTLS) komendą <span class="mono">execute</span> na całej flocie.</p>
+    <div class="note" style="border-left:3px solid var(--warn)"><b>Dane przykładowe (nie prezentacyjne).</b> Matryca niżej pochodzi z hosta <b>4-rdzeniowego</b>: flota konkuruje o CPU z ofiarą, a Rapid Reset jest tani dla nginx — stąd wartości niskie i zaszumione. To sam w sobie wniosek (nginx odporny), ale po <b>czyste, wyższe krzywe</b> uruchom <span class="mono">lab-results/scripts/run-botnet-matrix.sh</span> na maszynie z większą liczbą rdzeni (<span class="mono">BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800</span>).</div>
+    <div class="tablebox">
+      <table class="tnum">
+        <thead><tr><th>Konfiguracja serwera</th><th>1 bot</th><th>2 boty</th><th>3 boty</th><th>4 boty</th><th>5 botów</th></tr></thead>
+        <tbody>
+          <tr><td>nienаłatany (1.25.1), bez obrony</td><td>2.6%</td><td>6.4%</td><td>11.9%</td><td>5.4%</td><td>12.6%</td></tr>
+          <tr><td>nienаłatany (1.25.1) + hardening</td><td>4.3%</td><td>9.8%</td><td>13.2%</td><td>7.9%</td><td>12.3%</td></tr>
+          <tr><td>załatany (1.27), bez obrony</td><td>8.0%</td><td>11.7%</td><td>7.5%</td><td>14.9%</td><td>14.5%</td></tr>
+          <tr><td>załatany (1.27) + hardening</td><td>8.3%</td><td>8.2%</td><td>15.3%</td><td>14.8%</td><td>15.3%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap" style="color:var(--muted);font-size:.82rem">CPU ofiary (średnia z 3 okien), host 4-rdzeniowy, boty cap 0.4 CPU. Kolumny = rozmiar botnetu.</p>
+    <div class="findings">
+      <div class="finding f-w"><b>nginx jest odporny na Rapid Reset.</b> Nawet nienаłatany 1.25.1 nie jest nasycany przez flotę — anulowane strumienie są tanie w obsłudze, a limit <span class="mono">keepalive_requests</span> zamyka nadużywane połączenia. Dlatego „nienаłatany vs załatany” daje podobny, umiarkowany efekt (w przeciwieństwie do serwerów aplikacyjnych, które na CVE-2023-44487 padały).</div>
+      <div class="finding f-h"><b>Obciążenie rośnie z rozmiarem botnetu.</b> Trend jest wzrostowy (na 4 rdzeniach zaszumiony przez kontencję CPU). Hardening per-IP ogranicza pojedynczego bota, ale botnet rozkłada ruch na wiele IP — stąd agregat i tak rośnie z liczbą botów. To kluczowa lekcja o atakach rozproszonych.</div>
+      <div class="finding"><b>Sterowanie przez C2.</b> Flota to implanty Slivera (mTLS); operator jedną komendą <span class="mono">execute</span> wyzwala Rapid Reset na wszystkich botach naraz. Procedura i skrypt: <span class="mono">lab-results/README.md</span>.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pełna matryca wyników (Tor 1)</h2>
     <div class="tablebox">
       <table class="tnum">
         <thead><tr>
