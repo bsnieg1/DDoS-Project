@@ -19,8 +19,7 @@
 #
 # Parametry (zmienne srodowiskowe):
 #   BASELINE_SEC   czas baseline bez ataku (domyslnie 120 = 2 min)
-#   RAMP_SEC       czas na fazie 10 botow (domyslnie 120 = 2 min)
-#   PEAK_SEC       czas na fazie 30 botow (domyslnie 180 = 3 min)
+#   PHASE_SEC      czas na kazda faze botow (domyslnie 150 = 2.5 min)
 #   COOLDOWN_SEC   czas uspokojenia po ataku (domyslnie 60 = 1 min)
 #   FLEET_CPUSET   rdzenie dla floty botow (domyslnie "3-7")
 #   FLEET_CPUS     limit CPU na bota (domyslnie 0.5)
@@ -28,8 +27,7 @@
 set -euo pipefail
 
 BASELINE_SEC="${BASELINE_SEC:-120}"
-RAMP_SEC="${RAMP_SEC:-120}"
-PEAK_SEC="${PEAK_SEC:-180}"
+PHASE_SEC="${PHASE_SEC:-150}"
 COOLDOWN_SEC="${COOLDOWN_SEC:-60}"
 FLEET_CPUSET="${FLEET_CPUSET:-3-7}"
 FLEET_CPUS="${FLEET_CPUS:-0.5}"
@@ -146,16 +144,28 @@ run_experiment() {
   sleep "$BASELINE_SEC"
 
   # Faza 1: 10 botow
-  log "${C_R}Atak: 10 botow (${RAMP_SEC}s) ...${C_0}"
+  log "${C_R}Atak: 10 botow (${PHASE_SEC}s) ...${C_0}"
   create_bots "$exp" 10
   fire_attack "$exp"
-  sleep "$RAMP_SEC"
+  sleep "$PHASE_SEC"
 
   # Faza 2: 30 botow
-  log "${C_R}Atak: skaluje do 30 botow (${PEAK_SEC}s) ...${C_0}"
+  log "${C_R}Atak: skaluje do 30 botow (${PHASE_SEC}s) ...${C_0}"
   create_bots "$exp" 30
   fire_attack "$exp"
-  sleep "$PEAK_SEC"
+  sleep "$PHASE_SEC"
+
+  # Faza 3: 50 botow
+  log "${C_R}Atak: skaluje do 50 botow (${PHASE_SEC}s) ...${C_0}"
+  create_bots "$exp" 50
+  fire_attack "$exp"
+  sleep "$PHASE_SEC"
+
+  # Faza 4: 100 botow
+  log "${C_R}Atak: skaluje do 100 botow (${PHASE_SEC}s) ...${C_0}"
+  create_bots "$exp" 100
+  fire_attack "$exp"
+  sleep "$PHASE_SEC"
 
   # Stop
   log "${C_G}Stop ataku + cooldown (${COOLDOWN_SEC}s) ...${C_0}"
