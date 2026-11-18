@@ -65,3 +65,7 @@ logs/
 
 # Wyniki symulacji A/B (generowane)
 results/
+
+# Wyniki probe (generowane na nowo przy kazdym eksperymencie)
+**/probe.csv
+lab-results/

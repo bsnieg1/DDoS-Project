@@ -107,8 +107,16 @@ do_down_one() {
   local exp="$1"
   local label; label=$(get_env "$exp" EXP_LABEL)
   do_remove_one "$exp"
+  dc_for "$exp" down
+  log "[$label] Stos zamkniety (dane Zabbix zachowane)."
+}
+
+do_reset_one() {
+  local exp="$1"
+  local label; label=$(get_env "$exp" EXP_LABEL)
+  do_remove_one "$exp"
   dc_for "$exp" down -v
-  log "[$label] Stos zamkniety."
+  log "[$label] Stos zamkniety + dane Zabbix skasowane."
 }
 
 running_exps() {
@@ -141,7 +149,8 @@ show_help() {
   echo ""
   echo -e "  ${C_Y}Komendy:${C_0}"
   echo "    up <exp|all>       — odpal stos (exp1/exp2/exp3/exp4 lub all)"
-  echo "    down <exp|all>     — zamknij stos"
+  echo "    down <exp|all>     — zamknij stos (dane Zabbix zostaja)"
+  echo "    reset <exp|all>   — zamknij stos + skasuj dane Zabbix"
   echo "    attack <N> [exp]   — N botow na aktywne stosy (lub podaj exp)"
   echo "    stop [exp|all]     — zatrzymaj atak"
   echo "    remove [exp|all]   — usun boty"
@@ -196,6 +205,13 @@ while true; do
         for exp in $(running_exps); do do_down_one "$exp"; done
       else
         do_down_one "$arg1"
+      fi
+      ;;
+    reset)
+      if [ "${arg1:-all}" = "all" ]; then
+        for exp in $(running_exps); do do_reset_one "$exp"; done
+      else
+        do_reset_one "$arg1"
       fi
       ;;
     attack)
