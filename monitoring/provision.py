@@ -50,31 +50,36 @@ def call(method, params=None, auth=True):
     req.add_header("Content-Type", "application/json-rpc")
     if auth and _token:
         req.add_header("Authorization", "Bearer " + _token)
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     if "error" in body:
         raise RuntimeError("%s: %s" % (method, body["error"]))
     return body["result"]
 
 
-def wait_for_api(retries=60, delay=5):
-    """Czekaj az frontend/baza wstana (apiinfo.version nie wymaga logowania)."""
+def wait_for_api(retries=30, delay=3):
+    """Czekaj az frontend/baza wstana i logowanie dziala."""
+    global _token
+    api_up = False
     for i in range(retries):
         try:
-            ver = call("apiinfo.version", auth=False)
-            print("[provision] Zabbix API gotowe, wersja", ver)
+            if not api_up:
+                ver = call("apiinfo.version", auth=False)
+                print("[provision] Zabbix API gotowe, wersja", ver)
+                api_up = True
+            _token = call("user.login", {"username": USER, "password": PASS}, auth=False)
+            print("[provision] zalogowano jako", USER)
             return
-        except (urllib.error.URLError, RuntimeError, ConnectionError) as e:
-            print("[provision] czekam na API (%d/%d): %s" % (i + 1, retries, e))
+        except (urllib.error.URLError, RuntimeError, ConnectionError, TimeoutError, OSError) as e:
+            status = "API" if not api_up else "baza danych"
+            print("[provision] czekam na %s (%d/%d): %s" % (status, i + 1, retries, e))
             time.sleep(delay)
-    print("[provision] API nie wstalo w zadanym czasie", file=sys.stderr)
+    print("[provision] Zabbix nie gotowy w zadanym czasie", file=sys.stderr)
     sys.exit(1)
 
 
 def login():
-    global _token
-    _token = call("user.login", {"username": USER, "password": PASS}, auth=False)
-    print("[provision] zalogowano jako", USER)
+    pass
 
 
 def ensure_group():
@@ -126,7 +131,6 @@ def create_host(groupid, templates):
 
 def main():
     wait_for_api()
-    login()
     existing = host_exists()
     if existing:
         print("[provision] host '%s' juz istnieje (id=%s) — nic nie zmieniam." % (HOST_NAME, existing))
