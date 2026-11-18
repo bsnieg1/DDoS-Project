@@ -1,9 +1,9 @@
 ARG BASE=nginx:1.27-alpine
 FROM ${BASE}
-# zabbix-agent2 z repo community Alpine - zeby victim raportowal CPU/pamiec/siec
-# do Zabbixa (szablon "Linux by Zabbix agent"), tak jak zwykly victim/Dockerfile.
-# Dzieki temu wariant labvic (kontrola wersji nginx + hardeningu) jest TEZ
-# pelnoprawnym hostem monitorowanym - potrzebne do obserwacji na zywo w GUI.
+# zabbix-agent2 from the Alpine community repo - so the victim reports CPU/memory/network
+# to Zabbix (template "Linux by Zabbix agent"), just like the regular victim/Dockerfile.
+# This way the labvic variant (nginx version control + hardening) is ALSO a fully
+# monitored host - needed for real-time observation in the GUI.
 RUN apk add --no-cache zabbix-agent2
 COPY zabbix_agent2.conf /etc/zabbix/zabbix_agent2.conf
 COPY nginx.conf /conf/normal.conf
@@ -15,7 +15,7 @@ COPY entry.labvic.sh /entry.sh
 RUN chmod +x /entry.sh
 EXPOSE 10050
 ENTRYPOINT ["/entry.sh"]
-# -c wskazuje explicite na /etc/nginx/active.conf (patrz entry.labvic.sh) -
-# unika kolizji z bind-mountem /etc/nginx/nginx.conf, gdy ten obraz jest
-# podlaczony pod usluge "victim" w docker-compose (docker-compose.labvic.yml).
+# -c explicitly points to /etc/nginx/active.conf (see entry.labvic.sh) -
+# avoids conflict with the bind-mount of /etc/nginx/nginx.conf when this image is
+# connected to the "victim" service in docker-compose (docker-compose.labvic.yml).
 CMD ["nginx","-c","/etc/nginx/active.conf","-g","daemon off;"]

@@ -1,19 +1,19 @@
-# Podlacza "stary serwer" (nginx SPRZED mitygacji HTTP/2 Rapid Reset,
-# CVE-2023-44487 - patch w 1.25.3) pod usluge "victim" zarzadzana przez
-# docker-compose, zamiast recznych `docker build`/`docker run` jak w
+# Connects an "old server" (nginx BEFORE the HTTP/2 Rapid Reset mitigation,
+# CVE-2023-44487 - patch in 1.25.3) to the "victim" service managed by
+# docker-compose, instead of manual `docker build`/`docker run` as in
 # lab-results/scripts/run-botnet-matrix.sh.
 #
-# Wykorzystuje juz istniejacy victim/Dockerfile.labvic (ARG BASE = wersja
-# nginx) + victim/entry.labvic.sh (zmienna MODE = normal|hardened, przelacza
-# config w runtime). Nic nowego nie dodaje - tylko podpina to pod "victim".
+# Uses the already existing victim/Dockerfile.labvic (ARG BASE = nginx
+# version) + victim/entry.labvic.sh (variable MODE = normal|hardened, switches
+# config at runtime). Nothing new is added - it just wires this into "victim".
 #
-# Dzieki temu flota (docker-compose.botnet.yml + scenarios/botnet-fleet.sh)
-# atakuje automatycznie TEN serwer, bez zadnych dodatkowych krokow: "victim"
-# to zawsze ten sam alias DNS w sieci labnet, zmienia sie tylko obraz pod nim.
+# Thanks to this, the fleet (docker-compose.botnet.yml + scenarios/botnet-fleet.sh)
+# automatically attacks THIS server without any extra steps: "victim"
+# is always the same DNS alias on the labnet network, only the image underneath changes.
 #
-# --- Uzycie ---
+# --- Usage ---
 #
-# A) PODATNY, bez hardeningu (do zobaczenia realnego Rapid Reset):
+# A) VULNERABLE, without hardening (to see real Rapid Reset):
 #   NGINX_OLD=1.25.1-alpine VICTIM_MODE=normal \
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.labvic.yml -f docker-compose.botnet.yml \
@@ -21,29 +21,29 @@
 #
 #   bash scenarios/botnet-fleet.sh fire --requests 20000 --concurrency 300
 #
-# B) PODATNA wersja nginx + WLACZONY hardening (rate-limiting) - porownanie:
-#   NGINX_OLD=1.25.1-alpine VICTIM_MODE=hardened  (reszta jak wyzej)
+# B) VULNERABLE nginx version + ENABLED hardening (rate-limiting) - comparison:
+#   NGINX_OLD=1.25.1-alpine VICTIM_MODE=hardened  (rest as above)
 #
-# C) Zalatany nginx do porownania: po prostu NIE dodawaj tej nakladki
-#    (zostaje domyslny nginx:1.27-alpine z docker-compose.yml / monitoring.yml).
+# C) Patched nginx for comparison: simply DON'T add this overlay
+#    (keeps the default nginx:1.27-alpine from docker-compose.yml / monitoring.yml).
 #
-# Parametry (zmienne srodowiskowe):
-#   NGINX_OLD     wersja bazowego obrazu nginx (domyslnie 1.25.1-alpine,
-#                 ostatni przed mitygacja resetow w 1.25.3)
-#   VICTIM_MODE   normal | hardened (domyslnie normal)
-#   VIC_CPUS      limit CPU victima (domyslnie 2) - UWAGA: musi sie zgadzac
-#                 z `worker_processes` w victim/nginx*.conf (tam na sztywno 2),
-#                 inaczej nginx znow przeszacuje liczbe workerow wzgledem
-#                 realnego budzetu cgroup.
+# Parameters (environment variables):
+#   NGINX_OLD     base nginx image version (default 1.25.1-alpine,
+#                 last before reset mitigation in 1.25.3)
+#   VICTIM_MODE   normal | hardened (default normal)
+#   VIC_CPUS      victim CPU limit (default 2) - NOTE: must match
+#                 `worker_processes` in victim/nginx*.conf (hardcoded to 2 there),
+#                 otherwise nginx again overestimates the number of workers relative
+#                 to the actual cgroup budget.
 #
-# IZOLACJA RDZENI (cpuset): victim dostaje rdzenie 0,1 NA WYLACZNOSC. Flota
-# botow (docker-compose.botnet.yml) jest przypieta do rdzeni 2-11. Dzieki temu
-# wiele kontenerow floty NIE MOZE odebrac CPU ofierze niezaleznie od ich
-# liczby - kazda strona ma fizycznie oddzielona pule. Bez tego docker-compose
-# CPU limity to tylko gorny sufit w WSPOLNEJ puli rdzeni hosta, co przy duzej
-# flocie (np. 100 botow) powodowalo zanizone/zaszumione pomiary CPU% ofiary.
-# Dostosuj zakres rdzeni do wlasnego hosta (sprawdz: `docker info --format
-# '{{.NCPU}}'`); ponizej zalozono 12-rdzeniowy host.
+# CORE ISOLATION (cpuset): victim gets cores 0,1 EXCLUSIVELY. The bot
+# fleet (docker-compose.botnet.yml) is pinned to cores 2-11. This way
+# many fleet containers CANNOT steal CPU from the victim regardless of their
+# count - each side has a physically separated pool. Without this, docker-compose
+# CPU limits are just an upper ceiling in a SHARED host core pool, which with a large
+# fleet (e.g. 100 bots) caused skewed/noisy CPU% measurements of the victim.
+# Adjust the core range to your host (check: `docker info --format
+# '{{.NCPU}}'`); below assumes a 12-core host.
 
 services:
   victim:
@@ -61,11 +61,11 @@ services:
         limits:
           cpus: "${VIC_CPUS:-2}"
           memory: 512M
-    # UWAGA: docker-compose.yml (baza) bind-montuje ./victim/nginx.conf jako
-    # read-only na /etc/nginx/nginx.conf. Compose SCALA listy wolumenow miedzy
-    # plikami (nie da sie ich tu "wyzerowac" przez volumes: []), wiec ten bind
-    # mount zostaje aktywny. To jest OK: entry.labvic.sh pisze config pod INNA
-    # sciezka (/etc/nginx/active.conf), a Dockerfile.labvic uruchamia nginx z
-    # `-c /etc/nginx/active.conf`, wiec bind-mount na nginx.conf jest po prostu
-    # nieuzywany (nie koliduje). Bind-mounty cert.pem/key.pem/html z bazy
-    # nadpisuja identyczna zawartosc skopiowana do obrazu - bez roznicy funkcjonalnej.
+    # NOTE: docker-compose.yml (base) bind-mounts ./victim/nginx.conf as
+    # read-only to /etc/nginx/nginx.conf. Compose MERGES volume lists between
+    # files (you can't "clear" them here with volumes: []), so this bind
+    # mount stays active. This is OK: entry.labvic.sh writes config to a DIFFERENT
+    # path (/etc/nginx/active.conf), and Dockerfile.labvic runs nginx with
+    # `-c /etc/nginx/active.conf`, so the bind-mount on nginx.conf is simply
+    # unused (no conflict). The cert.pem/key.pem/html bind-mounts from the base
+    # overwrite identical content copied into the image - no functional difference.

@@ -2,7 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: raport bezpieczeństwa — pasmo nagłówka, kafle wyników, sekcje z wykresami SVG */
+/* Layout: security report — header band, result tiles, sections with SVG charts */
 :root{
   --bg:#f4f5f7; --surface:#ffffff; --surface2:#eef0f3; --fg:#171a21; --muted:#5b6472;
   --line:#dfe3e9; --accent:#2f6df6;
@@ -83,15 +83,15 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:.8rem;paddi
 
 <header>
   <div class="wrap hdrpad">
-    <div class="eyebrow">CVE-2023-44487 · Laboratorium defensywne</div>
+    <div class="eyebrow">CVE-2023-44487 · Defensive laboratory</div>
     <h1>Lab HTTP/2 Rapid Reset</h1>
-    <p class="sub">Wpływ ataku HTTP/2 na serwer-ofiarę przy pięciu poziomach obciążenia, zmierzony z obroną i bez. Pomiar bezpośredni z kontenera ofiary (CPU, połączenia, odpowiedzi) co 1 s, plus autentyczny Rapid Reset własnym botem.</p>
+    <p class="sub">Impact of an HTTP/2 attack on the victim server at five load levels, measured with and without defense. Direct measurement from the victim container (CPU, connections, responses) every 1 s, plus authentic Rapid Reset with a custom bot.</p>
     <div class="meta">
       <span class="chip">nginx 1.27.5 (alpine)</span>
-      <span class="chip">limit CPU: 1 rdzeń</span>
-      <span class="chip">atak: h2load + PoC rapidreset</span>
+      <span class="chip">CPU limit: 1 core</span>
+      <span class="chip">attack: h2load + PoC rapidreset</span>
       <span class="chip">monitoring: Zabbix 7.0</span>
-      <span class="chip">5 progów × 2 tryby + bot</span>
+      <span class="chip">5 thresholds × 2 modes + bot</span>
     </div>
   </div>
 </header>
@@ -99,175 +99,175 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:.8rem;paddi
 <div class="wrap">
 
   <section>
-    <h2>Najważniejszy wynik</h2>
-    <p class="lede">Ten sam atak, podany w pięciu natężeniach, uderza w serwer skonfigurowany na dwa sposoby: <b style="color:var(--vuln)">podatny</b> (domyślny nginx) i <b style="color:var(--hard)">utwardzony</b> (rate-limiting per-IP + zaostrzone limity HTTP/2). Różnica jest jednoznaczna.</p>
+    <h2>Key finding</h2>
+    <p class="lede">The same attack, delivered at five intensity levels, hits a server configured in two ways: <b style="color:var(--vuln)">vulnerable</b> (default nginx) and <b style="color:var(--hard)">hardened</b> (per-IP rate-limiting + tightened HTTP/2 limits). The difference is unambiguous.</p>
     <div class="tiles">
       <div class="tile v">
         <div class="big tnum">64%</div>
-        <div class="lbl">szczytowe średnie obciążenie CPU ofiary w trybie <b>podatnym</b> (próg ~80%)</div>
-        <div class="foot">z 2% w spoczynku</div>
+        <div class="lbl">peak average victim CPU load in <b>vulnerable</b> mode (~80% threshold)</div>
+        <div class="foot">from 2% at idle</div>
       </div>
       <div class="tile h">
         <div class="big tnum">~2%</div>
-        <div class="lbl">obciążenie CPU w trybie <b>utwardzonym</b> — <span class="deltaDn">płasko przy każdym natężeniu</span></div>
-        <div class="foot">flood odbijany na brzegu kodem 429</div>
+        <div class="lbl">CPU load in <b>hardened</b> mode — <span class="deltaDn">flat at every intensity level</span></div>
+        <div class="foot">flood rejected at the edge with 429</div>
       </div>
       <div class="tile h">
         <div class="big tnum">4&nbsp;951</div>
-        <div class="lbl">żądań odrzuconych kodem <b>429</b> w utwardzonym przy progu 80% (zamiast obsłużonych)</div>
+        <div class="lbl">requests rejected with <b>429</b> in hardened mode at 80% threshold (instead of served)</div>
         <div class="foot">served 2xx: 36 969 → 49</div>
       </div>
       <div class="tile w">
         <div class="big tnum">561&nbsp;975</div>
-        <div class="lbl"><b>RST_STREAM</b> wysłanych przez bota — przy zaledwie <b>2</b> utrzymanych połączeniach i <b>0</b> udanych odpowiedzi</div>
-        <div class="foot">łatka nginx zabija połączenie</div>
+        <div class="lbl"><b>RST_STREAM</b> frames sent by the bot — with only <b>2</b> maintained connections and <b>0</b> successful responses</div>
+        <div class="foot">nginx patch kills the connection</div>
       </div>
     </div>
   </section>
 
   <section>
-    <h2>Obciążenie CPU: podatny vs utwardzony</h2>
-    <p class="lede">Dla każdego progu obciążenia (skalibrowanego liczbą klientów h2load) pokazano średnie i szczytowe CPU ofiary. W trybie podatnym CPU rośnie z natężeniem ataku; w utwardzonym pozostaje na poziomie spoczynku.</p>
+    <h2>CPU load: vulnerable vs hardened</h2>
+    <p class="lede">For each load threshold (calibrated by number of h2load clients) the average and peak victim CPU is shown. In vulnerable mode CPU grows with attack intensity; in hardened mode it stays at idle level.</p>
     <div class="card">
       <div class="legend">
-        <span><span class="sw" style="background:var(--vuln)"></span>podatny — średnie CPU</span>
-        <span><span class="sw" style="background:var(--vuln);opacity:.35"></span>podatny — szczyt</span>
-        <span><span class="sw" style="background:var(--hard)"></span>utwardzony — średnie CPU</span>
+        <span><span class="sw" style="background:var(--vuln)"></span>vulnerable — average CPU</span>
+        <span><span class="sw" style="background:var(--vuln);opacity:.35"></span>vulnerable — peak</span>
+        <span><span class="sw" style="background:var(--hard)"></span>hardened — average CPU</span>
       </div>
-      <div class="chartbox"><svg id="cpuBars" viewBox="0 0 900 380" role="img" aria-label="Wykres słupkowy CPU podatny vs utwardzony"></svg></div>
+      <div class="chartbox"><svg id="cpuBars" viewBox="0 0 900 380" role="img" aria-label="Bar chart CPU vulnerable vs hardened"></svg></div>
     </div>
   </section>
 
   <section>
-    <h2>CPU w czasie — „schodki" ataku</h2>
-    <p class="lede">Przebieg CPU ofiary próbkowany co 1 s przez cały eksperyment. Tryb podatny tworzy rosnące schodki w miarę zwiększania natężenia; ten sam ciąg ataków w trybie utwardzonym to płaska linia tuż nad zerem.</p>
+    <h2>CPU over time — attack "staircase"</h2>
+    <p class="lede">Victim CPU sampled every 1 s throughout the entire experiment. Vulnerable mode produces rising steps as intensity increases; the same attack sequence in hardened mode is a flat line just above zero.</p>
     <div class="card">
       <div class="legend">
-        <span><span class="sw" style="background:var(--vuln)"></span>tryb podatny</span>
-        <span><span class="sw" style="background:var(--hard)"></span>tryb utwardzony</span>
+        <span><span class="sw" style="background:var(--vuln)"></span>vulnerable mode</span>
+        <span><span class="sw" style="background:var(--hard)"></span>hardened mode</span>
       </div>
-      <div class="chartbox"><svg id="cpuLine" viewBox="0 0 900 340" role="img" aria-label="Przebieg CPU w czasie"></svg></div>
+      <div class="chartbox"><svg id="cpuLine" viewBox="0 0 900 340" role="img" aria-label="CPU over time"></svg></div>
     </div>
   </section>
 
   <section>
-    <h2>Co stało się z żądaniami</h2>
-    <p class="lede">Widok od strony atakującego (klient h2load). W trybie podatnym serwer <b>obsługuje</b> rosnącą falę żądań (2xx). W utwardzonym niemal wszystko zostaje <b>odrzucone</b> kodem 429, a obsłużone są tylko pojedyncze — rate-limit per-IP przycina flood zanim obciąży backend.</p>
+    <h2>What happened to the requests</h2>
+    <p class="lede">View from the attacker side (h2load client). In vulnerable mode the server <b>serves</b> a rising wave of requests (2xx). In hardened mode almost everything is <b>rejected</b> with 429, and only single requests are served — per-IP rate-limit cuts the flood before it loads the backend.</p>
     <div class="grid2">
       <div class="card">
-        <h3>Żądania obsłużone (2xx)</h3>
-        <div class="cap">tryb podatny — ile żądań serwer realnie przetworzył</div>
-        <div class="chartbox"><svg id="servedBars" viewBox="0 0 440 300" role="img" aria-label="Żądania obsłużone w trybie podatnym"></svg></div>
+        <h3>Requests served (2xx)</h3>
+        <div class="cap">vulnerable mode — how many requests the server actually processed</div>
+        <div class="chartbox"><svg id="servedBars" viewBox="0 0 440 300" role="img" aria-label="Requests served in vulnerable mode"></svg></div>
       </div>
       <div class="card">
-        <h3>Utwardzony: obsłużone vs odrzucone</h3>
-        <div class="cap">zielone = 2xx, czerwone = 429 (odrzucone na brzegu)</div>
-        <div class="chartbox"><svg id="hardBars" viewBox="0 0 440 300" role="img" aria-label="Utwardzony obsłużone vs odrzucone"></svg></div>
+        <h3>Hardened: served vs rejected</h3>
+        <div class="cap">green = 2xx, red = 429 (rejected at the edge)</div>
+        <div class="chartbox"><svg id="hardBars" viewBox="0 0 440 300" role="img" aria-label="Hardened served vs rejected"></svg></div>
       </div>
     </div>
   </section>
 
   <section>
-    <h2>Autentyczny Rapid Reset (PoC bot)</h2>
-    <p class="lede">Oprócz floodu h2load uruchomiono prawdziwy wzorzec CVE-2023-44487: własny bot otwiera połączenie HTTP/2, wysyła <span class="mono">HEADERS</span> i natychmiast <span class="mono">RST_STREAM</span> (anulowanie strumienia) w pętli. To obnaża asymetrię atakującego i ofiary — oraz pokazuje łatkę nginx w działaniu.</p>
+    <h2>Authentic Rapid Reset (PoC bot)</h2>
+    <p class="lede">In addition to the h2load flood, the real CVE-2023-44487 pattern was executed: a custom bot opens an HTTP/2 connection, sends <span class="mono">HEADERS</span> and immediately <span class="mono">RST_STREAM</span> (stream cancellation) in a loop. This exposes the attacker-victim asymmetry — and demonstrates the nginx patch in action.</p>
     <div class="tiles">
-      <div class="tile w"><div class="big tnum">60&nbsp;073</div><div class="lbl">ramek <span class="mono">HEADERS</span> wysłanych (otwieranych strumieni)</div></div>
-      <div class="tile w"><div class="big tnum">561&nbsp;975</div><div class="lbl">ramek <span class="mono">RST_STREAM</span> — natychmiastowych anulowań</div></div>
-      <div class="tile v"><div class="big tnum">29</div><div class="lbl">reconnectów — nginx zrywał każde połączenie po zbyt wielu resetach</div><div class="foot">max utrzymanych połączeń: 2</div></div>
-      <div class="tile h"><div class="big tnum">0</div><div class="lbl">udanych odpowiedzi — anulowane strumienie nie dały atakującemu nic</div></div>
+      <div class="tile w"><div class="big tnum">60&nbsp;073</div><div class="lbl"><span class="mono">HEADERS</span> frames sent (streams opened)</div></div>
+      <div class="tile w"><div class="big tnum">561&nbsp;975</div><div class="lbl"><span class="mono">RST_STREAM</span> frames — immediate cancellations</div></div>
+      <div class="tile v"><div class="big tnum">29</div><div class="lbl">reconnects — nginx terminated each connection after too many resets</div><div class="foot">max maintained connections: 2</div></div>
+      <div class="tile h"><div class="big tnum">0</div><div class="lbl">successful responses — cancelled streams gave the attacker nothing</div></div>
     </div>
-    <p class="note">Wniosek: na załatanym nginx (≥1.25.3) czysty Rapid Reset <b>nie kładzie serwera</b> — mechanizm liczenia resetów zrywa agresywne połączenie. Koszt po stronie klienta (pół miliona ramek) jest ogromny względem zysku (zero). Sygnatura ataku jest natomiast doskonale widoczna: ekstremalny stosunek strumieni do utrzymanych połączeń.</p>
+    <p class="note">Conclusion: on a patched nginx (>=1.25.3) pure Rapid Reset <b>does not bring the server down</b> — the reset-counting mechanism terminates aggressive connections. The cost on the client side (half a million frames) is enormous relative to the gain (zero). The attack signature, however, is perfectly visible: extreme ratio of streams to maintained connections.</p>
   </section>
 
   <section>
-    <h2>Tor 2: Botnet sterowany przez C2 (Sliver)</h2>
-    <p class="lede">Drugi eksperyment: flota botów (osobne kontenery = osobne IP) odpala <b>autentyczny Rapid Reset</b> przeciw ofierze, a obciążenie skalowane jest <b>rozmiarem botnetu</b> (1→5) dla czterech konfiguracji: nienаłatany nginx 1.25.1 / załatany 1.27, każdy z hardeningiem i bez. Atak odpalany z konsoli <b>C2 Sliver</b> (kanał mTLS) komendą <span class="mono">execute</span> na całej flocie.</p>
-    <div class="note" style="border-left:3px solid var(--warn)"><b>Dane przykładowe (nie prezentacyjne).</b> Matryca niżej pochodzi z hosta <b>4-rdzeniowego</b>: flota konkuruje o CPU z ofiarą, a Rapid Reset jest tani dla nginx — stąd wartości niskie i zaszumione. To sam w sobie wniosek (nginx odporny), ale po <b>czyste, wyższe krzywe</b> uruchom <span class="mono">lab-results/scripts/run-botnet-matrix.sh</span> na maszynie z większą liczbą rdzeni (<span class="mono">BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800</span>).</div>
+    <h2>Track 2: Botnet controlled via C2 (Sliver)</h2>
+    <p class="lede">Second experiment: bot fleet (separate containers = separate IPs) launches <b>authentic Rapid Reset</b> against the victim, with load scaled by <b>botnet size</b> (1->5) for four configurations: unpatched nginx 1.25.1 / patched 1.27, each with and without hardening. Attack launched from the <b>C2 Sliver</b> console (mTLS channel) via the <span class="mono">execute</span> command on the entire fleet.</p>
+    <div class="note" style="border-left:3px solid var(--warn)"><b>Sample data (not presentation-grade).</b> The matrix below comes from a <b>4-core</b> host: the fleet competes for CPU with the victim, and Rapid Reset is cheap for nginx — hence the low and noisy values. This is in itself a finding (nginx is resilient), but for <b>clean, higher curves</b> run <span class="mono">lab-results/scripts/run-botnet-matrix.sh</span> on a machine with more cores (<span class="mono">BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800</span>).</div>
     <div class="tablebox">
       <table class="tnum">
-        <thead><tr><th>Konfiguracja serwera</th><th>1 bot</th><th>2 boty</th><th>3 boty</th><th>4 boty</th><th>5 botów</th></tr></thead>
+        <thead><tr><th>Server configuration</th><th>1 bot</th><th>2 bots</th><th>3 bots</th><th>4 bots</th><th>5 bots</th></tr></thead>
         <tbody>
-          <tr><td>nienаłatany (1.25.1), bez obrony</td><td>2.6%</td><td>6.4%</td><td>11.9%</td><td>5.4%</td><td>12.6%</td></tr>
-          <tr><td>nienаłatany (1.25.1) + hardening</td><td>4.3%</td><td>9.8%</td><td>13.2%</td><td>7.9%</td><td>12.3%</td></tr>
-          <tr><td>załatany (1.27), bez obrony</td><td>8.0%</td><td>11.7%</td><td>7.5%</td><td>14.9%</td><td>14.5%</td></tr>
-          <tr><td>załatany (1.27) + hardening</td><td>8.3%</td><td>8.2%</td><td>15.3%</td><td>14.8%</td><td>15.3%</td></tr>
+          <tr><td>unpatched (1.25.1), no defense</td><td>2.6%</td><td>6.4%</td><td>11.9%</td><td>5.4%</td><td>12.6%</td></tr>
+          <tr><td>unpatched (1.25.1) + hardening</td><td>4.3%</td><td>9.8%</td><td>13.2%</td><td>7.9%</td><td>12.3%</td></tr>
+          <tr><td>patched (1.27), no defense</td><td>8.0%</td><td>11.7%</td><td>7.5%</td><td>14.9%</td><td>14.5%</td></tr>
+          <tr><td>patched (1.27) + hardening</td><td>8.3%</td><td>8.2%</td><td>15.3%</td><td>14.8%</td><td>15.3%</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="cap" style="color:var(--muted);font-size:.82rem">CPU ofiary (średnia z 3 okien), host 4-rdzeniowy, boty cap 0.4 CPU. Kolumny = rozmiar botnetu.</p>
+    <p class="cap" style="color:var(--muted);font-size:.82rem">Victim CPU (average of 3 windows), 4-core host, bots capped at 0.4 CPU. Columns = botnet size.</p>
     <div class="findings">
-      <div class="finding f-w"><b>nginx jest odporny na Rapid Reset.</b> Nawet nienаłatany 1.25.1 nie jest nasycany przez flotę — anulowane strumienie są tanie w obsłudze, a limit <span class="mono">keepalive_requests</span> zamyka nadużywane połączenia. Dlatego „nienаłatany vs załatany” daje podobny, umiarkowany efekt (w przeciwieństwie do serwerów aplikacyjnych, które na CVE-2023-44487 padały).</div>
-      <div class="finding f-h"><b>Obciążenie rośnie z rozmiarem botnetu.</b> Trend jest wzrostowy (na 4 rdzeniach zaszumiony przez kontencję CPU). Hardening per-IP ogranicza pojedynczego bota, ale botnet rozkłada ruch na wiele IP — stąd agregat i tak rośnie z liczbą botów. To kluczowa lekcja o atakach rozproszonych.</div>
-      <div class="finding"><b>Sterowanie przez C2.</b> Flota to implanty Slivera (mTLS); operator jedną komendą <span class="mono">execute</span> wyzwala Rapid Reset na wszystkich botach naraz. Procedura i skrypt: <span class="mono">lab-results/README.md</span>.</div>
+      <div class="finding f-w"><b>nginx is resilient to Rapid Reset.</b> Even unpatched 1.25.1 is not saturated by the fleet — cancelled streams are cheap to handle, and the <span class="mono">keepalive_requests</span> limit closes abused connections. This is why "unpatched vs patched" produces a similar, moderate effect (unlike application servers that collapsed under CVE-2023-44487).</div>
+      <div class="finding f-h"><b>Load grows with botnet size.</b> The trend is upward (on 4 cores it's noisy due to CPU contention). Per-IP hardening limits a single bot, but a botnet distributes traffic across many IPs — so the aggregate still grows with the number of bots. This is a key lesson about distributed attacks.</div>
+      <div class="finding"><b>C2-controlled operation.</b> The fleet consists of Sliver implants (mTLS); the operator triggers Rapid Reset on all bots at once with a single <span class="mono">execute</span> command. Procedure and script: <span class="mono">lab-results/README.md</span>.</div>
     </div>
   </section>
 
   <section>
-    <h2>Pełna matryca wyników (Tor 1)</h2>
+    <h2>Full results matrix (Track 1)</h2>
     <div class="tablebox">
       <table class="tnum">
         <thead><tr>
-          <th>Scenariusz</th><th>Tryb</th><th>Klienci</th><th>Śr. CPU</th><th>Szczyt CPU</th><th>Max poł.</th><th>Obsłużone 2xx</th><th>Odrzucone 429</th>
+          <th>Scenario</th><th>Mode</th><th>Clients</th><th>Avg CPU</th><th>Peak CPU</th><th>Max conn.</th><th>Served 2xx</th><th>Rejected 429</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <p class="note">Próg „10%" w trybie utwardzonym: klient h2load nie zwrócił podsumowania statusów (zbyt mało ruchu przeszło), dlatego 2xx/429 = 0; istotne jest, że CPU pozostało na poziomie spoczynku (~2%). Liczby „obsłużone/odrzucone" to widok klienta h2load; część połączeń odrzucił <code>limit_conn</code> jeszcze przed warstwą HTTP (tanio), stąd w utwardzonym mało żądań dotarło do nginx.</p>
+    <p class="note">The "10%" threshold in hardened mode: the h2load client did not return a status summary (too little traffic got through), so 2xx/429 = 0; what matters is that CPU stayed at idle level (~2%). The "served/rejected" numbers are the h2load client's view; some connections were rejected by <code>limit_conn</code> before the HTTP layer (cheaply), so in hardened mode few requests reached nginx.</p>
   </section>
 
   <section>
-    <h2>Wnioski</h2>
+    <h2>Conclusions</h2>
     <div class="findings">
-      <div class="finding f-v"><b>Bez obrony obciążenie skaluje się z natężeniem.</b> CPU ofiary rośnie liniowo z liczbą atakujących klientów: 11% → 26% → 42% → 50% → 64%, a liczba równoczesnych połączeń 5 → 51. Przy wydajnym serwerze statycznym flood nie osiąga 100% (nginx jest szybki), ale koszt jest realny i rośnie.</div>
-      <div class="finding f-h"><b>Utwardzenie spłaszcza koszt do poziomu spoczynku.</b> Rate-limiting per-IP (<code>limit_req</code> 20 r/s, <code>limit_conn</code> 20) utrzymuje CPU na ~2% przy <em>każdym</em> natężeniu. Flood jest odbijany tanim kodem 429 na brzegu, zamiast obciążać backend — przy progu 80% to 4 951 odrzuceń wobec 49 obsłużonych.</div>
-      <div class="finding f-w"><b>Łatka protokołu już działa.</b> Autentyczny Rapid Reset (562 tys. RST_STREAM) nie przeciąża serwera — nginx zrywa agresywne połączenia (29 reconnectów, max 2 połączenia, 0 udanych odpowiedzi). Obrona w głąb (rate-limit) dokłada się do wbudowanej łatki.</div>
-      <div class="finding f-h"><b>Detekcja jest wykonalna i tania.</b> Sygnatura jest wyraźna w metrykach: skok aktywnych połączeń i żądań/s, ekstremalny stosunek strumieni do połączeń, wzrost CPU przy znikomej liczbie kompletnych odpowiedzi 2xx. Te same metryki zbiera Zabbix na żywo (sekcja niżej).</div>
+      <div class="finding f-v"><b>Without defense, load scales with intensity.</b> Victim CPU grows linearly with the number of attacking clients: 11% -> 26% -> 42% -> 50% -> 64%, and concurrent connections 5 -> 51. With an efficient static server the flood doesn't reach 100% (nginx is fast), but the cost is real and growing.</div>
+      <div class="finding f-h"><b>Hardening flattens cost to idle level.</b> Per-IP rate-limiting (<code>limit_req</code> 20 r/s, <code>limit_conn</code> 20) keeps CPU at ~2% at <em>every</em> intensity level. The flood is rejected with a cheap 429 at the edge instead of loading the backend — at the 80% threshold that's 4,951 rejections vs 49 served.</div>
+      <div class="finding f-w"><b>The protocol patch already works.</b> Authentic Rapid Reset (562k RST_STREAM) does not overload the server — nginx terminates aggressive connections (29 reconnects, max 2 connections, 0 successful responses). Defense in depth (rate-limit) adds to the built-in patch.</div>
+      <div class="finding f-h"><b>Detection is feasible and cheap.</b> The signature is clear in the metrics: spike in active connections and requests/s, extreme ratio of streams to connections, CPU increase with negligible complete 2xx responses. The same metrics are collected by Zabbix in real time (section below).</div>
     </div>
   </section>
 
   <section>
-    <h2>Metodyka i dowód pracy</h2>
-    <h3 style="margin-bottom:6px">Stanowisko</h3>
+    <h2>Methodology and proof of work</h2>
+    <h3 style="margin-bottom:6px">Test setup</h3>
     <ul>
-      <li><b>Ofiara:</b> nginx 1.27.5 w HTTP/2 (TLS self-signed), kontener z limitem <b>1 rdzenia CPU</b>, sieć <code>labnet</code> (internal, bez internetu).</li>
-      <li><b>Atak floodowy:</b> <code>h2load -c &lt;klienci&gt; -m 64</code> — natężenie kalibrowane liczbą klientów do docelowego CPU ofiary.</li>
-      <li><b>Atak protokołowy:</b> własny PoC <code>rapidreset</code> (Go) — HEADERS + natychmiastowy RST_STREAM w pętli, z reconnectem.</li>
-      <li><b>Obrona:</b> podmiana konfiguracji na <code>nginx.hardened.conf</code> — <code>http2_max_concurrent_streams 32</code>, <code>keepalive_requests 100</code>, <code>limit_req 20 r/s (burst 40)</code>, <code>limit_conn 20</code>, odrzucenia → <b>429</b>.</li>
+      <li><b>Victim:</b> nginx 1.27.5 with HTTP/2 (self-signed TLS), container with <b>1 CPU core</b> limit, <code>labnet</code> network (internal, no internet).</li>
+      <li><b>Flood attack:</b> <code>h2load -c &lt;clients&gt; -m 64</code> — intensity calibrated by number of clients to target victim CPU.</li>
+      <li><b>Protocol attack:</b> custom PoC <code>rapidreset</code> (Go) — HEADERS + immediate RST_STREAM in a loop, with reconnect.</li>
+      <li><b>Defense:</b> configuration swap to <code>nginx.hardened.conf</code> — <code>http2_max_concurrent_streams 32</code>, <code>keepalive_requests 100</code>, <code>limit_req 20 r/s (burst 40)</code>, <code>limit_conn 20</code>, rejections -> <b>429</b>.</li>
     </ul>
-    <h3 style="margin:14px 0 6px">Pomiar</h3>
+    <h3 style="margin:14px 0 6px">Measurement</h3>
     <ul>
-      <li>CPU ofiary z <code>cgroup v2</code> (<code>cpu.stat usage_usec</code>, delta/sekundę) — rozdzielczość 1 s.</li>
-      <li>Połączenia i żądania z <code>nginx stub_status</code>; rozkład statusów z raportu klienta h2load.</li>
-      <li>Kalibracja progów (zmierzone CPU dla rosnącej liczby klientów): c=4→9%, c=10→18%, c=25→40%, c=35→56%, c=50→82%.</li>
+      <li>Victim CPU from <code>cgroup v2</code> (<code>cpu.stat usage_usec</code>, delta/second) — 1 s resolution.</li>
+      <li>Connections and requests from <code>nginx stub_status</code>; status distribution from h2load client report.</li>
+      <li>Threshold calibration (measured CPU for increasing client counts): c=4->9%, c=10->18%, c=25->40%, c=35->56%, c=50->82%.</li>
     </ul>
-    <h3 style="margin:14px 0 6px">Kluczowe komendy</h3>
-    <pre>docker compose up -d --build                 # ofiara + loadgen + bot (+ Zabbix)
+    <h3 style="margin:14px 0 6px">Key commands</h3>
+    <pre>docker compose up -d --build                 # victim + loadgen + bot (+ Zabbix)
 docker compose exec bot rapidreset -url https://victim:443 \
-     -requests 20000 -concurrency 1000        # autentyczny Rapid Reset
+     -requests 20000 -concurrency 1000        # authentic Rapid Reset
 docker compose exec loadgen h2load -c 50 -m 64 -D 30 https://victim/   # flood ~80% CPU
 docker compose -f docker-compose.yml -f docker-compose.override.yml \
-     -f docker-compose.monitoring.yml -f docker-compose.hardening.yml up -d victim  # tryb utwardzony</pre>
-    <p class="note">Surowe dane (szereg czasowy 1 s i podsumowania per scenariusz) zebrano do plików CSV: <span class="mono">results.csv</span> (163 próbki), <span class="mono">stats.csv</span> (rozkład statusów). Eksperyment: 5 progów × {podatny, utwardzony} + baseline + bot, każdy scenariusz 30 s.</p>
+     -f docker-compose.monitoring.yml -f docker-compose.hardening.yml up -d victim  # hardened mode</pre>
+    <p class="note">Raw data (1 s time series and per-scenario summaries) collected to CSV files: <span class="mono">results.csv</span> (163 samples), <span class="mono">stats.csv</span> (status distribution). Experiment: 5 thresholds × {vulnerable, hardened} + baseline + bot, each scenario 30 s.</p>
   </section>
 
   <section>
-    <h2>Zabbix — monitoring na żywo (zrzuty)</h2>
-    <p class="lede">Ta sama ofiara jest hostem monitorowanym w Zabbix 7.0 (agent + szablon Nginx). Poniżej miejsce na zrzuty z „Monitoring → Latest data / Problems" pokazujące atak w czasie rzeczywistym — uzupełnij własnymi screenshotami.</p>
+    <h2>Zabbix — live monitoring (screenshots)</h2>
+    <p class="lede">The same victim is a monitored host in Zabbix 7.0 (agent + Nginx template). Below is a placeholder for screenshots from "Monitoring -> Latest data / Problems" showing the attack in real time — add your own screenshots.</p>
     <div class="zph" id="zph">
-      <b>Zabbix działa — host <span class="mono">victim</span> zbiera dane na żywo</b><br>
+      <b>Zabbix is running — host <span class="mono">victim</span> is collecting live data</b><br>
       Frontend: <span class="mono">http://localhost:8080</span> · login <span class="mono">Admin / zabbix</span><br>
-      <b>Monitoring → Latest data</b> → host <span class="mono">victim</span> → zaznacz <span class="mono">CPU utilization</span>, <span class="mono">Nginx: Connections active</span>, <span class="mono">Nginx: Requests total rate</span> → <b>Display graph</b>.
+      <b>Monitoring -> Latest data</b> -> host <span class="mono">victim</span> -> select <span class="mono">CPU utilization</span>, <span class="mono">Nginx: Connections active</span>, <span class="mono">Nginx: Requests total rate</span> -> <b>Display graph</b>.
     </div>
     <div class="findings" style="margin-top:14px">
-      <div class="finding f-v"><b>Atak referencyjny (tryb podatny) — do zrzutu.</b> Okno: <span class="mono">21:17:14 – 21:20:12</span> (h2load, 60 klientów, 64 strumienie). Zmierzone CPU ofiary w szczycie: <b>~79%</b>. Na wykresie Zabbixa ustaw zakres czasu na ostatnią 1 godzinę — zobaczysz wyraźny garb CPU i skok „Connections active” w tym oknie.</div>
+      <div class="finding f-v"><b>Reference attack (vulnerable mode) — for screenshot.</b> Window: <span class="mono">21:17:14 – 21:20:12</span> (h2load, 60 clients, 64 streams). Measured peak victim CPU: <b>~79%</b>. On the Zabbix chart set the time range to Last 1 hour — you will see a clear CPU hump and "Connections active" spike in that window.</div>
     </div>
-    <p class="note" id="zmeta">Wskazówka: w prawym górnym rogu wykresu ustaw zakres „Last 1 hour”, a najedź kursorem na garb, by odczytać wartości. Aby pokazać kontrast, można powtórzyć ten sam atak po przełączeniu w tryb utwardzony — CPU pozostanie płaskie (~2%), a w „Monitoring → Problems” pojawią się wyzwolone triggery detekcji.</p>
+    <p class="note" id="zmeta">Tip: in the top-right corner of the chart set the range to "Last 1 hour", and hover over the hump to read the values. To show contrast, repeat the same attack after switching to hardened mode — CPU will stay flat (~2%), and in "Monitoring -> Problems" the detection triggers will fire.</p>
   </section>
 
 </div>
 
 <footer>
-  <div class="wrap">Pomiar bezpośredni z kontenera ofiary · nginx 1.27.5 · limit 1 rdzeń CPU · dane 1-sekundowe · laboratorium edukacyjne, certyfikaty i konfiguracje wyłącznie labowe.</div>
+  <div class="wrap">Direct measurement from the victim container · nginx 1.27.5 · 1 CPU core limit · 1-second data · educational laboratory, certificates and configurations are lab-only.</div>
 </footer>
 
 <script>
@@ -302,10 +302,10 @@ function txt(p,x,y,s,a){const t=el(p,"text",{x,y,"font-family":css("--font-m"),"
     txt(svg,x0+(bw-3)/2,y(d.vpeak)-6,d.vpeak+"",{fill:vuln,fs:11,w:500});
     txt(svg,x0+bw+3+(bw-3)/2,y(d.hcpu)-6,d.hcpu+"",{fill:hard,fs:11,w:500});
     txt(svg,cx+step/2,H-B+20,"~"+d.k+"%",{fill:css("--fg"),fs:12,w:500});
-    txt(svg,cx+step/2,H-B+38,d.c+" klientów",{fill:muted,fs:10});
+    txt(svg,cx+step/2,H-B+38,d.c+" clients",{fill:muted,fs:10});
   });
   txt(svg,L-40,T-10,"CPU",{anchor:"start",fill:muted,fs:11});
-  txt(svg,W/2,H-6,"próg obciążenia (docelowy CPU / liczba klientów h2load)",{fill:muted,fs:11});
+  txt(svg,W/2,H-6,"load threshold (target CPU / number of h2load clients)",{fill:muted,fs:11});
 })();
 
 /* ---- Chart 2: time series lines ---- */
@@ -326,7 +326,7 @@ const HARD_TS=[2.0,2.0,2.1,2.2,2.1,2.0,2.1,2.0,2.1,2.2,2.1,2.0,2.1,2.0,2.1, 2.0,
   const hn=HARD_TS.length;const hx=i=>L+(pw*i/(hn-1));let hd="";HARD_TS.forEach((v,i)=>{hd+=(i?"L":"M")+hx(i).toFixed(1)+" "+y(v).toFixed(1)+" ";});
   el(svg,"path",{d:hd,fill:"none",stroke:hard,"stroke-width":2.5,"stroke-linejoin":"round"});
   el(svg,"path",{d:path(VULN_TS),fill:"none",stroke:vuln,"stroke-width":2.5,"stroke-linejoin":"round"});
-  txt(svg,W/2,H-6,"czas (próbki 1 s, kolejne progi obciążenia) →",{fill:muted,fs:11});
+  txt(svg,W/2,H-6,"time (1 s samples, successive load thresholds) ->",{fill:muted,fs:11});
 })();
 
 /* ---- Chart 3: served bars (vuln) ---- */
@@ -357,12 +357,12 @@ simpleBars("servedBars",LEVELS.map(d=>({k:d.k,v:d.v2xx})),css("--vuln"),40000,v=
 /* ---- table ---- */
 (function(){
   const tb=document.getElementById("tbody");
-  const rows=[["baseline (spoczynek)","v","–","2.2","2.9","1","–","–"]];
-  LEVELS.forEach(d=>rows.push([`atak ~${d.k}%`,"v",d.c,d.vcpu.toFixed(1),d.vpeak.toFixed(1),d.vconn,d.v2xx||"–","0"]));
+  const rows=[["baseline (idle)","v","–","2.2","2.9","1","–","–"]];
+  LEVELS.forEach(d=>rows.push([`attack ~${d.k}%`,"v",d.c,d.vcpu.toFixed(1),d.vpeak.toFixed(1),d.vconn,d.v2xx||"–","0"]));
   rows.push(["Rapid Reset (bot)","v","1","50.8","59.7","2","0","–"]);
-  LEVELS.forEach(d=>rows.push([`atak ~${d.k}%`,"h",d.c,d.hcpu.toFixed(1),"–",d.hconn,d.h2xx||"–",d.h429||"–"]));
+  LEVELS.forEach(d=>rows.push([`attack ~${d.k}%`,"h",d.c,d.hcpu.toFixed(1),"–",d.hconn,d.h2xx||"–",d.h429||"–"]));
   rows.forEach(r=>{const tr=document.createElement("tr");
-    const tagcls=r[1]==="v"?"v":"h";const tagtxt=r[1]==="v"?"podatny":"utwardz.";
+    const tagcls=r[1]==="v"?"v":"h";const tagtxt=r[1]==="v"?"vulnerable":"hardened";
     tr.innerHTML=`<td>${r[0]}</td><td><span class="tag ${tagcls}">${tagtxt}</span></td><td>${r[2]}</td><td>${r[3]}${r[3]!=="–"?"%":""}</td><td>${r[4]}${r[4]!=="–"?"%":""}</td><td>${r[5]}</td><td>${r[6]}</td><td class="${r[7]!=='0'&&r[7]!=='–'?'rowv':''}">${r[7]}</td>`;
     tb.appendChild(tr);});
 })();

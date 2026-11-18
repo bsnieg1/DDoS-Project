@@ -1,17 +1,18 @@
 #!/bin/sh
-# Sonda latencji uczciwego klienta. Co WINDOW sekund wysyla do victima niski,
-# staly strumien zadan (RATE/s - POMIAR, nie atak) i raportuje czas odpowiedzi
-# (p50/p95/p99), success% i realna przepustowosc. To jest wiarygodny sygnal
-# "czy serwer pada": gdy flota napiera, p95 rosnie i success spada.
+# Legitimate client latency probe. Every WINDOW seconds sends a low, constant
+# stream of requests (RATE/s - MEASUREMENT, not an attack) to the victim and
+# reports response time (p50/p95/p99), success% and actual throughput. This is a
+# reliable signal for "is the server degrading": when the fleet pushes, p95 rises
+# and success drops.
 #
-# Wyjscie: linia na stdout (widoczna w `docker logs lab-probe` i w control.sh
-# 'status'/'probe') + wiersz do CSV (/data/probe.csv) do pozniejszych wykresow.
+# Output: line to stdout (visible in `docker logs lab-probe` and in control.sh
+# 'status'/'probe') + row to CSV (/data/probe.csv) for later charts.
 #
-# Konfiguracja (env):
-#   TARGET  URL ofiary (domyslnie https://victim/)
-#   RATE    zadan/s uczciwego ruchu (domyslnie 10 - celowo niskie, to pomiar)
-#   WINDOW  dlugosc okna pomiarowego w sek (domyslnie 2)
-#   CSV     plik CSV (domyslnie /data/probe.csv)
+# Configuration (env):
+#   TARGET  victim URL (default https://victim/)
+#   RATE    legitimate requests/s (default 10 - intentionally low, this is a measurement)
+#   WINDOW  measurement window length in seconds (default 2)
+#   CSV     CSV file (default /data/probe.csv)
 set -u
 
 TARGET="${TARGET:-https://victim/}"
@@ -24,7 +25,7 @@ if [ ! -f "$CSV" ]; then
   echo "epoch,iso,p50_ms,p95_ms,p99_ms,max_ms,success_pct,rps,requests" > "$CSV"
 fi
 
-echo "[probe] target=$TARGET rate=${RATE}/s okno=${WINDOW}s -> CSV=$CSV"
+echo "[probe] target=$TARGET rate=${RATE}/s window=${WINDOW}s -> CSV=$CSV"
 
 while true; do
   json=$(echo "GET $TARGET" \
@@ -32,10 +33,10 @@ while true; do
     | vegeta report -type=json 2>/dev/null)
 
   if [ -z "$json" ]; then
-    # vegeta nic nie zwrocilo (np. victim calkowicie nieosiagalny)
+    # vegeta returned nothing (e.g. victim completely unreachable)
     epoch=$(date +%s); iso=$(date '+%H:%M:%S')
     echo "$epoch,$iso,,,,,0,0,0" >> "$CSV"
-    printf '%s  p95=  --    success=  0%%   (brak odpowiedzi)\n' "$iso"
+    printf '%s  p95=  --    success=  0%%   (no response)\n' "$iso"
     sleep 1; continue
   fi
 
@@ -50,9 +51,9 @@ while true; do
   epoch=$(date +%s); iso=$(date '+%H:%M:%S')
   echo "$epoch,$iso,$p50,$p95,$p99,$pmax,$succ,$rps,$reqs" >> "$CSV"
 
-  # Czytelna linia na zywo; oznacz, gdy serwer sie dlawi.
+  # Readable live line; flag when server is choking.
   flag=""
-  case "$succ" in 100|100.0) : ;; *) flag="  <-- SPADEK DOSTEPNOSCI" ;; esac
+  case "$succ" in 100|100.0) : ;; *) flag="  <-- AVAILABILITY DROP" ;; esac
   printf '%s  p50=%-7s p95=%-8s p99=%-8s success=%-5s%%  rps=%-6s%s\n' \
     "$iso" "$p50" "$p95" "$p99" "$succ" "$rps" "$flag"
 done

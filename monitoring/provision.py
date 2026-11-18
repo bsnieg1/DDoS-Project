@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Provisioning hosta "victim" w Zabbixie przez API (tylko biblioteka standardowa).
+Provisioning of the "victim" host in Zabbix via API (standard library only).
 
-Co robi (idempotentnie):
-  1. czeka az API Zabbixa wstanie,
-  2. loguje sie jako Admin/zabbix,
-  3. tworzy grupe hostow "DDoS Lab" (jesli brak),
-  4. tworzy hosta "victim" z interfejsem agenta victim:10050 (jesli brak),
-  5. podpina dostepne szablony: "Linux by Zabbix agent" (CPU/RAM/load/siec
-     z agenta w kontenerze victim) oraz "Nginx by HTTP" (stub_status po HTTPS:
-     liczba aktywnych polaczen i zadan — kluczowy sygnal przy Rapid Reset).
+What it does (idempotently):
+  1. waits for the Zabbix API to start,
+  2. logs in as Admin/zabbix,
+  3. creates the "DDoS Lab" host group (if missing),
+  4. creates the "victim" host with agent interface victim:10050 (if missing),
+  5. links available templates: "Linux by Zabbix agent" (CPU/RAM/load/network
+     from the agent in the victim container) and "Nginx by HTTP" (stub_status over HTTPS:
+     active connections and request count — key signal for Rapid Reset).
 
-Uruchamiane zwykle przez usluge `zabbix-provision` (profil "provision").
-Konfiguracja przez zmienne srodowiskowe: ZBX_URL, ZBX_USER, ZBX_PASS.
+Usually run via the `zabbix-provision` service (profile "provision").
+Configuration via environment variables: ZBX_URL, ZBX_USER, ZBX_PASS.
 """
 import json
 import os
@@ -41,7 +41,7 @@ _id = 0
 
 
 def call(method, params=None, auth=True):
-    """Pojedyncze wywolanie JSON-RPC do API Zabbixa 7.0 (auth przez naglowek Bearer)."""
+    """Single JSON-RPC call to the Zabbix 7.0 API (auth via Bearer header)."""
     global _id
     _id += 1
     payload = {"jsonrpc": "2.0", "method": method, "params": params or {}, "id": _id}
@@ -58,23 +58,23 @@ def call(method, params=None, auth=True):
 
 
 def wait_for_api(retries=30, delay=3):
-    """Czekaj az frontend/baza wstana i logowanie dziala."""
+    """Wait for the frontend/database to start and login to work."""
     global _token
     api_up = False
     for i in range(retries):
         try:
             if not api_up:
                 ver = call("apiinfo.version", auth=False)
-                print("[provision] Zabbix API gotowe, wersja", ver)
+                print("[provision] Zabbix API ready, version", ver)
                 api_up = True
             _token = call("user.login", {"username": USER, "password": PASS}, auth=False)
-            print("[provision] zalogowano jako", USER)
+            print("[provision] logged in as", USER)
             return
         except (urllib.error.URLError, RuntimeError, ConnectionError, TimeoutError, OSError) as e:
-            status = "API" if not api_up else "baza danych"
-            print("[provision] czekam na %s (%d/%d): %s" % (status, i + 1, retries, e))
+            status = "API" if not api_up else "database"
+            print("[provision] waiting for %s (%d/%d): %s" % (status, i + 1, retries, e))
             time.sleep(delay)
-    print("[provision] Zabbix nie gotowy w zadanym czasie", file=sys.stderr)
+    print("[provision] Zabbix not ready in time", file=sys.stderr)
     sys.exit(1)
 
 
@@ -85,10 +85,10 @@ def login():
 def ensure_group():
     res = call("hostgroup.get", {"filter": {"name": [HOST_GROUP]}, "output": ["groupid"]})
     if res:
-        print("[provision] grupa hostow juz istnieje:", HOST_GROUP)
+        print("[provision] host group already exists:", HOST_GROUP)
         return res[0]["groupid"]
     gid = call("hostgroup.create", {"name": HOST_GROUP})["groupids"][0]
-    print("[provision] utworzono grupe hostow:", HOST_GROUP)
+    print("[provision] created host group:", HOST_GROUP)
     return gid
 
 
@@ -99,7 +99,7 @@ def resolve_templates():
         if res:
             found.append({"templateid": res[0]["templateid"], "name": name})
         else:
-            print("[provision] UWAGA: szablon nie znaleziony, pomijam:", name)
+            print("[provision] WARNING: template not found, skipping:", name)
     return found
 
 
@@ -117,15 +117,15 @@ def create_host(groupid, templates):
         "interfaces": [{
             "type": 1,        # 1 = agent
             "main": 1,
-            "useip": 0,       # uzyj DNS zamiast IP
+            "useip": 0,       # use DNS instead of IP
             "ip": "",
-            "dns": "victim",  # nazwa uslugi w sieci labnet
+            "dns": "victim",  # service name on the labnet network
             "port": "10050",
         }],
     }
     hostid = call("host.create", params)["hostids"][0]
-    print("[provision] utworzono hosta '%s' (id=%s)" % (HOST_NAME, hostid))
-    print("[provision] podpiete szablony:", ", ".join(t["name"] for t in templates) or "(brak)")
+    print("[provision] created host '%s' (id=%s)" % (HOST_NAME, hostid))
+    print("[provision] linked templates:", ", ".join(t["name"] for t in templates) or "(none)")
     return hostid
 
 
@@ -133,13 +133,13 @@ def main():
     wait_for_api()
     existing = host_exists()
     if existing:
-        print("[provision] host '%s' juz istnieje (id=%s) — nic nie zmieniam." % (HOST_NAME, existing))
-        print("[provision] gotowe.")
+        print("[provision] host '%s' already exists (id=%s) — no changes made." % (HOST_NAME, existing))
+        print("[provision] done.")
         return
     gid = ensure_group()
     templates = resolve_templates()
     create_host(gid, templates)
-    print("[provision] gotowe. Frontend: http://localhost:8080  (Admin / zabbix)")
+    print("[provision] done. Frontend: http://localhost:8080  (Admin / zabbix)")
 
 
 if __name__ == "__main__":

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Detekcja w Zabbixie: triggery wykrywajace przeciazenie / HTTP/2 Rapid Reset na
-hoscie "victim" + prosty kanal alertowania (media type typu "script" -> log serwera).
+Zabbix detection setup: triggers detecting overload / HTTP/2 Rapid Reset on
+the "victim" host + simple alerting channel (script type media -> server log).
 
-Tworzy (idempotentnie):
-  TRIGGERY na hoscie victim:
-    1. "DoS: wysokie uzycie CPU na victim"        (High)
-    2. "DoS: wysoka liczba zadan/s nginx (victim)" (Average)
-    3. "Mozliwy HTTP/2 Rapid Reset na victim"       (Disaster) -- sygnatura:
-        duzo zadan/s w stosunku do nowych polaczen (wiele strumieni na jedno
-        polaczenie TCP) + podwyzszone CPU. To wprost obraz CVE-2023-44487.
-  ALERTOWANIE:
+Creates (idempotently):
+  TRIGGERS on host victim:
+    1. "DoS: high CPU usage on victim"             (High)
+    2. "DoS: high request rate on nginx (victim)"  (Average)
+    3. "Possible HTTP/2 Rapid Reset on victim"      (Disaster) -- signature:
+        many requests/s relative to new connections (many streams per
+        TCP connection) + elevated CPU. This is directly the CVE-2023-44487 pattern.
+  ALERTING:
     - media type "Lab file alert" (script lab_alert.sh),
-    - przypisanie media userowi Admin,
-    - akcja na problemy -> wyslij alert do Admina.
+    - media assignment to Admin user,
+    - action on problems -> send alert to Admin.
 
-Uruchamiane zwykle przez usluge `zabbix-alerts` (profil "provision").
+Usually run via the `zabbix-alerts` service (profile "provision").
 """
 import json
 import os
@@ -29,25 +29,25 @@ USER = os.environ.get("ZBX_USER", "Admin")
 PASS = os.environ.get("ZBX_PASS", "zabbix")
 HOST = "victim"
 
-# Progi dobrane do labu (baseline: CPU ~0.5%, zadania ~0.02/s).
+# Thresholds tuned for the lab (baseline: CPU ~0.5%, requests ~0.02/s).
 TRIGGERS = [
     {
-        "description": "DoS: wysokie uzycie CPU na victim",
+        "description": "DoS: high CPU usage on victim",
         "expression": "min(/victim/system.cpu.util,#2)>60",
         "priority": 4,  # High
-        "comments": "Srednie uzycie CPU victima przekracza 60% w 2 kolejnych pomiarach. "
-                    "Przy niskim wolumenie 'uzytecznego' ruchu to sygnal DoS.",
+        "comments": "Average victim CPU exceeds 60% in 2 consecutive samples. "
+                    "With low volume of 'useful' traffic this signals DoS.",
     },
     {
-        "description": "DoS: wysoka liczba zadan/s nginx (victim)",
+        "description": "DoS: high request rate on nginx (victim)",
         "expression": "last(/victim/nginx.requests.total.rate)>30",
         "priority": 3,  # Average
-        "comments": "Gwaltowny wzrost liczby zadan/s na nginx wzgledem baseline (~0.02/s).",
+        "comments": "Sharp increase in nginx request rate compared to baseline (~0.02/s).",
     },
     {
-        "description": "Mozliwy HTTP/2 Rapid Reset na victim",
-        # Sygnatura: zadania/s >> tempo nowych polaczen (duzo strumieni na
-        # jedno polaczenie) + realny wzrost zadan + podwyzszone CPU.
+        "description": "Possible HTTP/2 Rapid Reset on victim",
+        # Signature: requests/s >> rate of new connections (many streams per
+        # TCP connection) + real request increase + elevated CPU.
         "expression": (
             "last(/victim/nginx.requests.total.rate)"
             ">20*last(/victim/nginx.connections.accepted.rate)"
@@ -55,8 +55,8 @@ TRIGGERS = [
             " and last(/victim/system.cpu.util)>30"
         ),
         "priority": 5,  # Disaster
-        "comments": "Wiele zadan (strumieni HTTP/2) na jedno polaczenie TCP przy "
-                    "podwyzszonym CPU — obraz CVE-2023-44487 (Rapid Reset).",
+        "comments": "Many requests (HTTP/2 streams) per TCP connection with "
+                    "elevated CPU — the CVE-2023-44487 (Rapid Reset) pattern.",
     },
 ]
 
@@ -89,16 +89,16 @@ def wait_for_api(retries=60, delay=5):
             call("apiinfo.version", auth=False)
             return
         except (urllib.error.URLError, RuntimeError, ConnectionError) as e:
-            print("[alerts] czekam na API (%d/%d): %s" % (i + 1, retries, e))
+            print("[alerts] waiting for API (%d/%d): %s" % (i + 1, retries, e))
             time.sleep(delay)
-    print("[alerts] API nie wstalo", file=sys.stderr)
+    print("[alerts] API did not start", file=sys.stderr)
     sys.exit(1)
 
 
 def login():
     global _token
     _token = call("user.login", {"username": USER, "password": PASS}, auth=False)
-    print("[alerts] zalogowano jako", USER)
+    print("[alerts] logged in as", USER)
 
 
 def ensure_triggers():
@@ -109,16 +109,16 @@ def ensure_triggers():
             "output": ["triggerid"],
         })
         if exists:
-            print("[alerts] trigger juz istnieje:", t["description"])
+            print("[alerts] trigger already exists:", t["description"])
             continue
         call("trigger.create", t)
-        print("[alerts] utworzono trigger:", t["description"])
+        print("[alerts] created trigger:", t["description"])
 
 
 def ensure_media_type():
     res = call("mediatype.get", {"filter": {"name": [MEDIA_NAME]}, "output": ["mediatypeid"]})
     if res:
-        print("[alerts] media type juz istnieje:", MEDIA_NAME)
+        print("[alerts] media type already exists:", MEDIA_NAME)
         return res[0]["mediatypeid"]
     params = {
         "type": 1,  # 1 = script
@@ -132,7 +132,7 @@ def ensure_media_type():
         "status": 0,
     }
     mtid = call("mediatype.create", params)["mediatypeids"][0]
-    print("[alerts] utworzono media type:", MEDIA_NAME)
+    print("[alerts] created media type:", MEDIA_NAME)
     return mtid
 
 
@@ -141,7 +141,7 @@ def ensure_admin_media(mtid):
     uid = users[0]["userid"]
     for m in users[0].get("medias", []):
         if m.get("mediatypeid") == mtid:
-            print("[alerts] Admin ma juz media 'Lab file alert'")
+            print("[alerts] Admin already has media 'Lab file alert'")
             return uid
     call("user.update", {
         "userid": uid,
@@ -149,51 +149,51 @@ def ensure_admin_media(mtid):
             "mediatypeid": mtid,
             "sendto": "lab",
             "active": 0,       # 0 = enabled
-            "severity": 63,    # wszystkie severity
+            "severity": 63,    # all severities
             "period": "1-7,00:00-24:00",
         }],
     })
-    print("[alerts] przypisano media 'Lab file alert' userowi Admin")
+    print("[alerts] assigned media 'Lab file alert' to Admin user")
     return uid
 
 
 def ensure_action(mtid, uid):
     existing = call("action.get", {"filter": {"name": [ACTION_NAME]}, "output": ["actionid"]})
     if existing:
-        print("[alerts] akcja juz istnieje:", ACTION_NAME)
+        print("[alerts] action already exists:", ACTION_NAME)
         return
     params = {
         "name": ACTION_NAME,
-        "eventsource": 0,   # 0 = triggery
+        "eventsource": 0,   # 0 = triggers
         "status": 0,
         "esc_period": "1h",
         "filter": {
             "evaltype": 0,
             "conditions": [
-                # conditiontype 1 = host; operator 0 = equals. Ograniczamy do victima.
-                # (hostid uzupelniamy nizej)
+                # conditiontype 1 = host; operator 0 = equals. Restrict to victim.
+                # (hostid filled below)
             ],
         },
         "operations": [{
             "operationtype": 0,  # 0 = send message
             "opmessage": {
-                # Media type typu "script" nie ma domyslnego szablonu wiadomosci,
-                # wiec podajemy tresc wprost (default_msg=0).
+                # Script type media has no default message template,
+                # so we provide the content explicitly (default_msg=0).
                 "default_msg": 0,
                 "mediatypeid": mtid,
                 "subject": "[Zabbix] {EVENT.SEVERITY}: {TRIGGER.NAME}",
                 "message": ("Problem: {TRIGGER.NAME}\nHost: {HOST.NAME}\n"
-                            "Waga: {EVENT.SEVERITY}\nCzas: {EVENT.DATE} {EVENT.TIME}\n"
-                            "Szczegoly: {ITEM.NAME} = {ITEM.VALUE}"),
+                            "Severity: {EVENT.SEVERITY}\nTime: {EVENT.DATE} {EVENT.TIME}\n"
+                            "Details: {ITEM.NAME} = {ITEM.VALUE}"),
             },
             "opmessage_usr": [{"userid": uid}],
         }],
     }
-    # ogranicz akcje do hosta victim
+    # restrict action to host victim
     hid = call("host.get", {"filter": {"host": [HOST]}, "output": ["hostid"]})[0]["hostid"]
     params["filter"]["conditions"] = [{"conditiontype": 1, "operator": 0, "value": hid}]
     call("action.create", params)
-    print("[alerts] utworzono akcje alertowa:", ACTION_NAME)
+    print("[alerts] created alert action:", ACTION_NAME)
 
 
 def main():
@@ -203,7 +203,7 @@ def main():
     mtid = ensure_media_type()
     uid = ensure_admin_media(mtid)
     ensure_action(mtid, uid)
-    print("[alerts] gotowe. Alerty laduja w logu serwera (docker compose logs zabbix-server)")
+    print("[alerts] done. Alerts land in server log (docker compose logs zabbix-server)")
 
 
 if __name__ == "__main__":

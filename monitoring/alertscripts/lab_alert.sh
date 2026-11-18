@@ -1,12 +1,12 @@
 #!/bin/sh
-# Labowy skrypt alertu Zabbixa (media type typu "script").
-# Zabbix wola go z parametrami, ktore ustawiamy w definicji media type:
-#   $1 = odbiorca ({ALERT.SENDTO})
-#   $2 = temat    ({ALERT.SUBJECT})
-#   $3 = tresc    ({ALERT.MESSAGE})
+# Lab Zabbix alert script (script type media).
+# Zabbix calls it with parameters set in the media type definition:
+#   $1 = recipient ({ALERT.SENDTO})
+#   $2 = subject   ({ALERT.SUBJECT})
+#   $3 = body      ({ALERT.MESSAGE})
 #
-# Alert laduje w logu serwera (widoczny: docker compose logs zabbix-server)
-# oraz w pliku /var/lib/zabbix/alert.log wewnatrz kontenera serwera.
+# Alert lands in the server log (visible: docker compose logs zabbix-server)
+# and in the file /var/lib/zabbix/alert.log inside the server container.
 LOG=/var/lib/zabbix/alert.log
 LINE="$(date '+%F %T') | ALERT to=$1 | $2 | $3"
 echo "[lab-alert] $LINE"

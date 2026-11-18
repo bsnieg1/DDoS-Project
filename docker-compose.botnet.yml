@@ -1,36 +1,36 @@
-# Flota skalowalnych botow do testu wielu-zrodlowego (multi-source) obciazenia.
+# Scalable bot fleet for multi-source load testing.
 #
-# ZAKRES I GRANICA (wazne):
-#   Ta usluga zarzadza WYLACZNIE kontenerami TEGO labu, ktore juz na etapie
-#   `docker build` maja wgrany PoC `rapidreset` (patrz bot/Dockerfile - binarka
-#   jest kompilowana i kladziona w obrazie RAZ, przy budowaniu). Kontener
-#   startuje bezczynnie ("sleep infinity"); atak odpalasz recznie przez
+# SCOPE AND BOUNDARY (important):
+#   This service manages ONLY containers of THIS lab, which already have the
+#   `rapidreset` PoC baked in at `docker build` time (see bot/Dockerfile - the
+#   binary is compiled and placed in the image ONCE, during build). The container
+#   starts idle ("sleep infinity"); you launch the attack manually via
 #   scenarios/botnet-fleet.sh.
 #
-#   Nie ma tu ZADNEGO mechanizmu, ktory wgrywalby atak na urzadzenia, ktore go
-#   jeszcze nie maja (implant, auto-dystrybucja, C2 push). To swiadomie poza
-#   zakresem - zarzadzamy tylko wlasna, z gory zbudowana flota.
+#   There is NO mechanism here that would deploy the attack to devices that don't
+#   already have it (implant, auto-distribution, C2 push). This is intentionally
+#   out of scope - we only manage our own, pre-built fleet.
 #
-# Uzycie (patrz scenarios/botnet-fleet.sh dla gotowych komend):
+# Usage (see scenarios/botnet-fleet.sh for ready commands):
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.botnet.yml up -d --build --scale botfleet=5
 #
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
-#     -f docker-compose.botnet.yml ps -q botfleet       # lista ID kontenerow floty
+#     -f docker-compose.botnet.yml ps -q botfleet       # list fleet container IDs
 
 services:
   botfleet:
-    build: ./bot          # TEN SAM obraz/Dockerfile co usluga "bot" (override.yml) -
-                           # rapidreset wbudowany przy budowaniu, nic w runtime.
+    build: ./bot          # SAME image/Dockerfile as the "bot" service (override.yml) -
+                           # rapidreset built-in at build time, nothing at runtime.
     image: ddos-lab-botfleet:latest
-    # BRAK container_name -> skalowalne przez --scale botfleet=N
-    # (ten sam wzorzec co docker-compose.victims.yml / victim-node).
+    # NO container_name -> scalable via --scale botfleet=N
+    # (same pattern as docker-compose.victims.yml / victim-node).
     networks:
       - labnet
-    # Przypiete do rdzeni 2-11 (NIE 0,1 - te sa zarezerwowane dla victima,
-    # patrz docker-compose.labvic.yml). Flota NIE MOZE odebrac CPU ofierze
-    # niezaleznie od liczby kontenerow - fizyczna izolacja, nie tylko limit.
-    # Dostosuj do wlasnego hosta (`docker info --format '{{.NCPU}}'`).
+    # Pinned to cores 2-11 (NOT 0,1 - those are reserved for the victim,
+    # see docker-compose.labvic.yml). The fleet CANNOT steal CPU from the victim
+    # regardless of the number of containers - physical isolation, not just limits.
+    # Adjust to your host (`docker info --format '{{.NCPU}}'`).
     cpuset: "2-11"
     deploy:
       resources:

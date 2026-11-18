@@ -1,7 +1,6 @@
-# Sonda latencji "uczciwego klienta": vegeta (HTTP load-tester z histogramami
-# p50/p95/p99 + success%). Uzywana przy NISKIM, stalym tempie jako POMIAR, nie
-# atak - pokazuje czas odpowiedzi serwera dla normalnego uzytkownika przed i w
-# trakcie naporu floty.
+# "Legitimate client" latency probe: vegeta (HTTP load-tester with p50/p95/p99
+# histograms + success%). Used at a LOW, constant rate as a MEASUREMENT, not an
+# attack - shows server response time for a normal user before and during fleet pressure.
 FROM alpine:3.20 AS build
 ARG VEGETA_VERSION=12.12.0
 RUN apk add --no-cache curl tar \

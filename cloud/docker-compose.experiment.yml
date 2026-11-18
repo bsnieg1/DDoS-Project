@@ -1,8 +1,8 @@
-# Jeden stos eksperymentu: victim (parametryzowany wariant) + Zabbix + sonda.
-# Uzywany 4 razy z roznymi plikami .env (env/exp1.env ... env/exp4.env).
-# Kazdy eksperyment = osobny projekt compose = osobna siec + Zabbix + dane.
+# Single experiment stack: victim (parameterized variant) + Zabbix + probe.
+# Used 4 times with different .env files (env/exp1.env ... env/exp4.env).
+# Each experiment = separate compose project = separate network + Zabbix + data.
 #
-# Uzycie (run-experiments.sh robi to automatycznie):
+# Usage (run-experiments.sh does this automatically):
 #   docker compose --env-file env/exp1.env -f docker-compose.experiment.yml up -d
 
 services:

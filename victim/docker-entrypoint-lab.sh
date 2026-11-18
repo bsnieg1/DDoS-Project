@@ -1,45 +1,45 @@
 #!/bin/sh
-# Wrapper entrypointu victima: najpierw zabbix-agent2 w tle, potem nginx.
+# Wrapper entrypoint for victim: first zabbix-agent2 in the background, then nginx.
 set -e
 
 CONF=/etc/zabbix/zabbix_agent2.conf
 
-# --- Tozsamosc agenta sterowana przez zmienne srodowiskowe ---
-# Bazowy host "victim" nie ustawia zadnej z nich -> zostaje Hostname=victim z pliku.
-# Skalowalna pula (docker-compose.victims.yml) ustawia ZBX_HOSTNAME_ITEM +
-# ZBX_METADATA, zeby kazda replika miala unikalna nazwe i sama zarejestrowala
-# sie w serwerze (autoregistration).
+# --- Agent identity controlled via environment variables ---
+# The base host "victim" does not set any of them -> keeps Hostname=victim from the file.
+# The scalable pool (docker-compose.victims.yml) sets ZBX_HOSTNAME_ITEM +
+# ZBX_METADATA, so each replica has a unique name and auto-registers
+# with the server (autoregistration).
 
 if [ -n "$ZBX_HOSTNAME" ]; then
-    # Sztywna nazwa hosta.
+    # Fixed hostname.
     sed -i "s/^Hostname=.*/Hostname=${ZBX_HOSTNAME}/" "$CONF"
 fi
 
 if [ -n "$ZBX_HOSTNAME_PREFIX" ]; then
-    # Czytelna, unikalna nazwa: <prefiks>-<hostname kontenera>, np. victim-ab12cd34.
-    # Uzywane przez skalowalna pule (--scale), gdzie nie da sie nadac sztywnej
-    # nazwy per replika.
+    # Readable, unique name: <prefix>-<container hostname>, e.g. victim-ab12cd34.
+    # Used by the scalable pool (--scale), where you can't assign a fixed
+    # name per replica.
     sed -i "s/^Hostname=.*/Hostname=${ZBX_HOSTNAME_PREFIX}-$(hostname)/" "$CONF"
 fi
 
 if [ -n "$ZBX_HOSTNAME_ITEM" ]; then
-    # Dynamiczna nazwa z systemu (np. system.hostname = hostname kontenera).
-    # Wylaczamy sztywny Hostname, wlaczamy HostnameItem.
-    sed -i "s/^Hostname=.*/# Hostname wylaczony (uzywamy HostnameItem)/" "$CONF"
+    # Dynamic name from system (e.g. system.hostname = container hostname).
+    # Disable fixed Hostname, enable HostnameItem.
+    sed -i "s/^Hostname=.*/# Hostname disabled (using HostnameItem)/" "$CONF"
     echo "HostnameItem=${ZBX_HOSTNAME_ITEM}" >> "$CONF"
 fi
 
 if [ -n "$ZBX_METADATA" ]; then
-    # Metadane widoczne dla reguly autoregistration na serwerze.
+    # Metadata visible to the autoregistration rule on the server.
     echo "HostMetadata=${ZBX_METADATA}" >> "$CONF"
 fi
 
-# Start agenta w tle. Jesli agent padnie, nginx i tak wstaje — lab pozostaje
-# uzywalny, a brak metryk zobaczysz w Zabbixie.
+# Start agent in the background. If the agent dies, nginx starts anyway — the lab remains
+# usable, and you'll see the missing metrics in Zabbix.
 echo "[lab] starting zabbix-agent2 ..."
 zabbix_agent2 -c "$CONF" &
 
-# Oddaj sterowanie oryginalnemu entrypointowi nginx (ustawia TLS, uruchamia
-# nginx na pierwszym planie jako PID glowny kontenera).
+# Hand over control to the original nginx entrypoint (sets up TLS, starts
+# nginx in the foreground as the main container PID).
 echo "[lab] handing over to nginx entrypoint ..."
 exec /docker-entrypoint.sh "$@"

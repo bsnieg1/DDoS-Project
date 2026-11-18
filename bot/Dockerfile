@@ -7,10 +7,10 @@ RUN [ -f go.mod ] || go mod init rapidreset; \
     go mod tidy 2>/dev/null; \
     go build -o /rapidreset . 2>/dev/null || go build -o /rapidreset ./...
 FROM alpine:3.20
-# nghttp2 dostarcza h2load - uzywany w trybie "legit" (ruch imitujacy normalny
-# klient HTTP/2), obok wlasnego PoC `rapidreset` (tryb "attack"). Wybor trybu
-# nastepuje PO zbudowaniu obrazu, przez scenarios/botnet-fleet.sh - oba
-# binarki siedza w obrazie od poczatku, nic nie jest doinstalowywane w runtime.
+# nghttp2 provides h2load - used in "legit" mode (traffic imitating a normal
+# HTTP/2 client), alongside the custom PoC `rapidreset` ("attack" mode). Mode
+# selection happens AFTER the image is built, via scenarios/botnet-fleet.sh - both
+# binaries are in the image from the start, nothing is installed at runtime.
 RUN apk add --no-cache ca-certificates nghttp2
 COPY --from=build /rapidreset /usr/local/bin/rapidreset
 ENTRYPOINT ["sleep", "infinity"]

@@ -1,29 +1,29 @@
-# Panel GUI (localhost:8090) do dynamicznego skalowania floty botow + podgladu
-# na zywo. Steruje WLASNA pula kontenerow-botow (gui-bot-N) przez zamontowany
-# docker socket. Monitoring (CPU/polaczenia ofiary w czasie) ogladasz w Zabbixie.
+# GUI panel (localhost:8090) for dynamic bot fleet scaling + live monitoring.
+# Controls its OWN pool of bot containers (gui-bot-N) via mounted docker socket.
+# Monitoring (CPU/victim connections over time) is viewed in Zabbix.
 #
-# Wymaga: zbudowanego obrazu bota (ddos-lab-botfleet:latest lub ddos-lab-bot)
-# oraz dzialajacej sieci labnet z ofiara "victim". Typowy flow:
+# Requires: built bot image (ddos-lab-botfleet:latest or ddos-lab-bot)
+# and a running labnet network with victim "victim". Typical flow:
 #
-#   # 1. Ofiara Z AGENTEM Zabbix + stos monitoringu (victim ma teraz agenta
-#   #    takze w wariancie labvic - patrz victim/Dockerfile.labvic):
+#   # 1. Victim WITH Zabbix agent + monitoring stack (victim now has the agent
+#   #    also in the labvic variant - see victim/Dockerfile.labvic):
 #   NGINX_OLD=1.25.1-alpine VICTIM_MODE=normal \
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.monitoring.yml -f docker-compose.labvic.yml \
 #     up -d --build
 #
-#   # 2. Provisioning Zabbixa (host victim + szablony Linux/Nginx) - raz:
+#   # 2. Zabbix provisioning (host victim + Linux/Nginx templates) - once:
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.monitoring.yml run --rm zabbix-provision
 #
-#   # 3. Panel GUI:
+#   # 3. GUI panel:
 #   docker compose -f docker-compose.gui.yml up -d --build
 #
-#   # Otworz http://localhost:8090  (suwak = liczba botow, Fire/Stop),
-#   # a obok http://localhost:8080  (Zabbix, Admin/zabbix) na metryki.
+#   # Open http://localhost:8090  (slider = number of bots, Fire/Stop),
+#   # and alongside http://localhost:8080  (Zabbix, Admin/zabbix) for metrics.
 #
-# Boty tworzone przez panel sa cpuset-przypiete do rdzeni 2-11 (victim trzyma
-# 0,1 - patrz docker-compose.labvic.yml), wiec flota nie odbiera CPU ofierze.
+# Bots created by the panel are cpuset-pinned to cores 2-11 (victim holds
+# 0,1 - see docker-compose.labvic.yml), so the fleet doesn't steal CPU from the victim.
 
 services:
   botgui:
@@ -31,10 +31,10 @@ services:
     image: ddos-lab-botgui:latest
     container_name: lab-botgui
     environment:
-      # Siec glownego stosu (docker-compose.yml ma name: ddos-lab -> ddos-lab_labnet).
-      # NIE uzywamy COMPOSE_PROJECT_NAME: przy ladowaniu docker-compose.gui.yml
-      # jego wlasny project name ("ddos") nadpisalby zmienna i dalby zla siec.
-      # Nadpisywalne jawnie przez LABNET w srodowisku.
+      # Network of the main stack (docker-compose.yml has name: ddos-lab -> ddos-lab_labnet).
+      # We do NOT use COMPOSE_PROJECT_NAME: when loading docker-compose.gui.yml
+      # its own project name ("ddos") would override the variable and give the wrong network.
+      # Explicitly overridable via LABNET in the environment.
       LABNET: "${LABNET:-ddos-lab_labnet}"
       BOT_IMAGE: "${BOT_IMAGE:-ddos-lab-botfleet:latest}"
       VICTIM: "victim:443"
@@ -45,8 +45,8 @@ services:
       PORT: "8090"
       MAX_BOTS: "${MAX_BOTS:-100}"
     volumes:
-      # Socket demona hosta - panel zarzadza kontenerami-botami.
-      # Na Docker Desktop (Windows/Mac) ta sciezka dziala tak samo.
+      # Host daemon socket - the panel manages bot containers.
+      # On Docker Desktop (Windows/Mac) this path works the same way.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8090:8090"

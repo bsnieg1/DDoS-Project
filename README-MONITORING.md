@@ -1,30 +1,30 @@
-# Monitoring labu — serwer Zabbix + podłączony host (victim)
+# Lab monitoring — Zabbix server + connected host (victim)
 
-Opcjonalna warstwa defensywna dołożona do labu HTTP/2 (CVE-2023-44487 Rapid Reset).
-Stawia **serwer Zabbix 7.0 LTS** i podłącza do niego **atakowany host `victim`**, żeby
-na żywo obserwować wpływ ataku na serwer-ofiarę (CPU, pamięć, ruch sieciowy oraz
-liczbę aktywnych połączeń / żądań nginx ze `stub_status`).
+Optional defensive layer added to the HTTP/2 lab (CVE-2023-44487 Rapid Reset).
+Deploys a **Zabbix 7.0 LTS server** and connects the **attacked host `victim`** to it, so you
+can observe the impact of the attack on the victim server in real time (CPU, memory, network
+traffic, and the number of active connections / nginx requests from `stub_status`).
 
-Bazowy lab (`victim` + `loadgen` [+ `bot` + `c2`]) działa bez tej warstwy — to
-osobny plik compose, który włączasz tylko gdy chcesz monitoring.
+The base lab (`victim` + `loadgen` [+ `bot` + `c2`]) works without this layer — it's
+a separate compose file that you include only when you want monitoring.
 
-## Co dochodzi
+## What's added
 
-| Usługa | Obraz | Rola |
+| Service | Image | Role |
 |---|---|---|
-| `zabbix-db` | `postgres:16-alpine` | baza danych Zabbixa |
-| `zabbix-server` | `zabbix/zabbix-server-pgsql:alpine-7.0-latest` | serwer Zabbix |
-| `zabbix-web` | `zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest` | frontend WWW (`localhost:8080`) |
-| `zabbix-provision` | `python:3.12-alpine` | jednorazowy provisioner hosta `victim` (profil `provision`) |
-| `victim` (podmieniony) | build `./victim` | nginx HTTP/2 **+ zabbix-agent2** w jednym kontenerze |
+| `zabbix-db` | `postgres:16-alpine` | Zabbix database |
+| `zabbix-server` | `zabbix/zabbix-server-pgsql:alpine-7.0-latest` | Zabbix server |
+| `zabbix-web` | `zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest` | web frontend (`localhost:8080`) |
+| `zabbix-provision` | `python:3.12-alpine` | one-time provisioner for host `victim` (profile `provision`) |
+| `victim` (replaced) | build `./victim` | nginx HTTP/2 **+ zabbix-agent2** in a single container |
 
-Sieci:
-- **`labnet`** (`internal: true`, z bazowego labu) — serwer ↔ agent(`victim`) ↔ baza, bez internetu.
-- **`monnet`** (`bridge`) — jedyny powód: wystawić port `8080` frontendu na host.
+Networks:
+- **`labnet`** (`internal: true`, from base lab) — server ↔ agent(`victim`) ↔ database, no internet.
+- **`monnet`** (`bridge`) — sole purpose: expose frontend port `8080` to the host.
 
-## Uruchomienie
+## Startup
 
-Z katalogu `ddos-lab`. Wygodnie ustawić `COMPOSE_FILE`, żeby nie dopisywać `-f`:
+From the `ddos-lab` directory. It's convenient to set `COMPOSE_FILE` so you don't have to add `-f` each time:
 
 ```bash
 export COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.monitoring.yml
@@ -32,45 +32,45 @@ export COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compos
 
 (PowerShell: `$env:COMPOSE_FILE="docker-compose.yml:docker-compose.override.yml:docker-compose.monitoring.yml"`)
 
-Tylko monitoring + ofiara (bez budowania bota ataku i C2):
+Monitoring + victim only (without building the attack bot and C2):
 
 ```bash
 docker compose up -d --build victim zabbix-db zabbix-server zabbix-web
 ```
 
-Albo pełny lab + monitoring naraz:
+Or the full lab + monitoring together:
 
 ```bash
 docker compose up -d --build
 ```
 
-Pierwszy start serwera importuje schemat bazy — frontend bywa gotowy po ~1–2 min.
+The first server start imports the database schema — the frontend may be ready after ~1–2 min.
 
-## Podłączenie hosta `victim` do Zabbixa (provisioning)
+## Connecting host `victim` to Zabbix (provisioning)
 
-Host, grupę i szablony tworzy jednorazowy provisioner (idempotentny):
+The host, group, and templates are created by a one-time provisioner (idempotent):
 
 ```bash
 docker compose run --rm zabbix-provision
 ```
 
-Skrypt loguje się do API, tworzy grupę **DDoS Lab**, hosta **victim** z interfejsem
-agenta `victim:10050` i podpina szablony:
-- **Linux by Zabbix agent** — CPU, pamięć, load, ruch sieciowy kontenera victim (z agenta),
-- **Nginx by HTTP** — `stub_status` po HTTPS (aktywne połączenia, liczba żądań).
+The script logs into the API, creates the **DDoS Lab** group, the **victim** host with
+agent interface `victim:10050`, and links the templates:
+- **Linux by Zabbix agent** — CPU, memory, load, network traffic of the victim container (from agent),
+- **Nginx by HTTP** — `stub_status` over HTTPS (active connections, request count).
 
-Po chwili w **Monitoring → Hosts** host `victim` powinien zświecić się na zielono
-(ZBX). Jeśli wolisz klikać ręcznie — patrz sekcja „Ręczna konfiguracja" niżej.
+After a moment, in **Monitoring → Hosts**, host `victim` should turn green
+(ZBX). If you prefer to configure manually — see the "Manual configuration" section below.
 
-## Pula wielu maszyn (fleet) z autorejestracją
+## Multi-machine pool (fleet) with autoregistration
 
-Chcesz kilka monitorowanych maszyn naraz (np. 4–5)? Służy do tego overlay
-`docker-compose.victims.yml` — skalowalna usługa `victim-node` (ten sam obraz:
-nginx HTTP/2 + zabbix-agent2). Każda replika zgłasza się sama do serwera
-(**autoregistration**), więc nie dodajesz hostów ręcznie.
+Want several monitored machines at once (e.g. 4–5)? Use the overlay
+`docker-compose.victims.yml` — a scalable `victim-node` service (same image:
+nginx HTTP/2 + zabbix-agent2). Each replica registers itself with the server
+(**autoregistration**), so you don't add hosts manually.
 
-Jednorazowo włącz regułę autorejestracji (tworzy akcję + grupę „DDoS Lab Pool",
-podpina szablon *Linux by Zabbix agent*):
+One-time: enable the autoregistration rule (creates action + "DDoS Lab Pool" group,
+links the *Linux by Zabbix agent* template):
 
 ```bash
 docker compose \
@@ -79,7 +79,7 @@ docker compose \
   run --rm zabbix-autoreg
 ```
 
-Odpal 5 maszyn (zmień liczbę przez `--scale victim-node=N`):
+Spin up 5 machines (change the number with `--scale victim-node=N`):
 
 ```bash
 docker compose \
@@ -88,40 +88,40 @@ docker compose \
   up -d --build --scale victim-node=5 victim-node
 ```
 
-Po ~1–2 min w **Monitoring → Hosts** pojawią się hosty `victim-<id>` (np.
-`victim-c73efa73e066`) w grupie **DDoS Lab Pool**, każdy zbierający CPU/RAM/sieć.
-Nazwa = `victim-` + skrócony id kontenera (unikatowa per replika).
+After ~1–2 min, in **Monitoring → Hosts** you'll see hosts `victim-<id>` (e.g.
+`victim-c73efa73e066`) in the **DDoS Lab Pool** group, each collecting CPU/RAM/network.
+Name = `victim-` + truncated container id (unique per replica).
 
-Zmniejszenie/zwiększenie liczby: ponów `up -d --scale victim-node=N`. Usunięte
-repliki zostaną w Zabbixie jako „martwe" hosty (brak danych) — możesz je skasować
-w **Data collection → Hosts** albo przez API.
+Scale up/down: rerun `up -d --scale victim-node=N`. Removed
+replicas will remain in Zabbix as "dead" hosts (no data) — you can delete them
+in **Data collection → Hosts** or via API.
 
-> Pula jest niezależna od bazowego, atakowanego hosta `victim` (DNS `victim`),
-> którego używają `bot` i `loadgen`. Pula to dodatkowe maszyny „do tła" / floty.
+> The pool is independent of the base, attacked host `victim` (DNS `victim`),
+> which is used by `bot` and `loadgen`. The pool consists of additional "background" / fleet machines.
 
 ## Frontend
 
 - URL: <http://localhost:8080>
-- Login: **Admin** / hasło: **zabbix** (domyślne — to lab; zmień, jeśli potrzebujesz).
+- Login: **Admin** / password: **zabbix** (default — this is a lab; change if needed).
 
-## Demo: zobacz atak w metrykach
+## Demo: observe the attack in metrics
 
-1. Wygeneruj ruch odniesienia (baseline) z `loadgen`:
+1. Generate reference traffic (baseline) from `loadgen`:
    ```bash
    docker compose exec loadgen h2load -n 2000 -c 20 https://victim/
    ```
-2. W Zabbixie (**Monitoring → Latest data**, host `victim`) obserwuj
-   `Nginx: Connections active` i obciążenie CPU.
-3. Przy realnym teście Rapid Reset (`bot`) zobaczysz asymetrię z `README-DEFENSE.md`:
-   skok aktywnych połączeń / CPU przy niewielkiej liczbie kompletnych odpowiedzi 2xx.
+2. In Zabbix (**Monitoring → Latest data**, host `victim`) observe
+   `Nginx: Connections active` and CPU load.
+3. During a real Rapid Reset test (`bot`) you'll see the asymmetry from `README-DEFENSE.md`:
+   a spike in active connections / CPU with a low number of complete 2xx responses.
 
-## Detekcja i alerty (triggery + Rapid Reset)
+## Detection and alerts (triggers + Rapid Reset)
 
-Sama widoczność to nie wszystko — overlay `docker-compose.monitoring.yml` ma też
-jednorazowy setup detekcji (`zabbix-alerts`), który na hoście `victim` zakłada
-triggery i kanał alertowania.
+Visibility alone is not enough — the `docker-compose.monitoring.yml` overlay also includes
+a one-time detection setup (`zabbix-alerts`), which creates triggers and an alerting
+channel on the `victim` host.
 
-Włączenie (po tym, jak stoi stack i jest host `victim`):
+Enable (after the stack is up and host `victim` exists):
 
 ```bash
 docker compose \
@@ -130,35 +130,35 @@ docker compose \
   run --rm zabbix-alerts
 ```
 
-Tworzy (idempotentnie):
+Creates (idempotently):
 
-| Trigger | Waga | Warunek |
+| Trigger | Severity | Condition |
 |---|---|---|
-| DoS: wysokie uzycie CPU na victim | High | CPU > 60% w 2 kolejnych pomiarach |
-| DoS: wysoka liczba zadan/s nginx (victim) | Average | `nginx.requests.total.rate` > 30/s |
-| Mozliwy HTTP/2 Rapid Reset na victim | Disaster | zadania/s > 20× tempa nowych polaczen **i** > 20/s |
+| DoS: high CPU usage on victim | High | CPU > 60% in 2 consecutive samples |
+| DoS: high request rate on nginx (victim) | Average | `nginx.requests.total.rate` > 30/s |
+| Possible HTTP/2 Rapid Reset on victim | Disaster | requests/s > 20× the rate of new connections **and** > 20/s |
 
-Ostatni to **sygnatura CVE-2023-44487**: dużo żądań (strumieni HTTP/2) na jedno
-połączenie TCP — wprost obraz z `README-DEFENSE.md`. Jest czysto protokołowy
-(nie zależy od CPU), bo nginx bywa zbyt wydajny, by atak podniósł CPU.
+The last one is the **CVE-2023-44487 signature**: many requests (HTTP/2 streams) per
+TCP connection — directly the pattern from `README-DEFENSE.md`. It's purely protocol-based
+(independent of CPU), since nginx can be too efficient for the attack to raise CPU.
 
-**Alertowanie:** media type typu *script* (`monitoring/alertscripts/lab_alert.sh`)
-oraz akcja wysyłająca problem do użytkownika `Admin`. Alert ląduje w logu:
+**Alerting:** a *script* type media (`monitoring/alertscripts/lab_alert.sh`)
+and an action that sends the problem to the `Admin` user. Alerts land in the log:
 
 ```bash
 docker exec lab-zabbix-server tail -f /var/lib/zabbix/alert.log
 ```
 
-Przykładowy wpis:
+Example entry:
 
 ```
-2026-... | ALERT to=lab | [Zabbix] Disaster: Mozliwy HTTP/2 Rapid Reset na victim | ...
+2026-... | ALERT to=lab | [Zabbix] Disaster: Possible HTTP/2 Rapid Reset on victim | ...
 ```
 
-### Test detekcji (wywołanie alarmu)
+### Detection test (triggering the alarm)
 
-Podtrzymywany ruch HTTP/2 z `loadgen` (h2load zamyka połączenie po
-`keepalive_requests=1000`, więc pętla utrzymuje wysoki rate):
+Sustained HTTP/2 traffic from `loadgen` (h2load closes the connection after
+`keepalive_requests=1000`, so a loop maintains a high rate):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.override.yml \
@@ -166,81 +166,81 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml \
   sh -c 'i=0; while [ $i -lt 40 ]; do h2load -n 8000 -c 8 -m 64 https://victim/ >/dev/null 2>&1; i=$((i+1)); done'
 ```
 
-Po ~1–2 min w **Monitoring → Problems** zobaczysz problemy „DoS: wysoka liczba
-zadan/s" i „Mozliwy HTTP/2 Rapid Reset", a w `alert.log` odpowiadające im alerty.
+After ~1–2 min, in **Monitoring → Problems** you'll see problems "DoS: high request
+rate" and "Possible HTTP/2 Rapid Reset", and in `alert.log` the corresponding alerts.
 
-> Pod obciążeniem może też chwilowo wyskoczyć „Linux: Zabbix agent is not
-> available" — agent bywa mniej responsywny, gdy host jest przeciążony. To
-> realistyczny efekt uboczny, problem sam się zamyka po ustaniu ruchu.
+> Under load, "Linux: Zabbix agent is not available" may also temporarily appear
+> — the agent can be less responsive when the host is overloaded. This is a
+> realistic side effect; the problem resolves itself after traffic stops.
 
-## Hardening — mitygacja Rapid Reset (tryb utwardzony)
+## Hardening — Rapid Reset mitigation (hardened mode)
 
-Overlay `docker-compose.hardening.yml` przełącza victima w wariant **utwardzony**:
-podmienia konfigurację nginx na `victim/nginx.hardened.conf`, która dokłada
-obronę w głąb przeciw HTTP/2 Rapid Reset (ponad wbudowaną łatkę nginx ≥ 1.25.3):
+The overlay `docker-compose.hardening.yml` switches the victim to a **hardened** variant:
+it replaces the nginx configuration with `victim/nginx.hardened.conf`, which adds
+defense-in-depth against HTTP/2 Rapid Reset (on top of the built-in nginx patch ≥ 1.25.3):
 
-| Mechanizm | Podatny (`nginx.conf`) | Utwardzony (`nginx.hardened.conf`) |
+| Mechanism | Vulnerable (`nginx.conf`) | Hardened (`nginx.hardened.conf`) |
 |---|---|---|
 | `http2_max_concurrent_streams` | 128 | **32** |
 | `keepalive_requests` | 1000 | **100** |
-| `limit_req` (tempo żądań/IP) | — | **20 r/s, burst 40, nadmiar → 429** |
-| `limit_conn` (połączenia/IP) | — | **20** |
+| `limit_req` (request rate/IP) | — | **20 r/s, burst 40, excess → 429** |
+| `limit_conn` (connections/IP) | — | **20** |
 
-Rate-limiting odcina flood strumieni z jednego źródła tanim `429`, zamiast
-obciążać backend. Endpoint `/status` (stub_status) jest wyłączony z limitów,
-żeby Zabbix mógł zbierać metryki także w trakcie ataku.
+Rate-limiting cuts off the stream flood from a single source with a cheap `429`, instead
+of loading the backend. The `/status` endpoint (stub_status) is exempt from limits,
+so Zabbix can collect metrics even during an attack.
 
-### Porównanie before/after (materiał do pracy)
+### Before/after comparison (material for the report)
 
-1. **Tryb podatny** — odpal atak i zobacz skok w Zabbixie (trigger „Rapid Reset” odpala):
+1. **Vulnerable mode** — launch the attack and see the spike in Zabbix (the "Rapid Reset" trigger fires):
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.override.yml \
      -f docker-compose.monitoring.yml up -d --build victim
    ```
-   (następnie pętla h2load z sekcji „Test detekcji”)
+   (then the h2load loop from the "Detection test" section)
 
-2. **Tryb utwardzony** — ten sam atak, rate-limit tnie flood:
+2. **Hardened mode** — same attack, rate-limit cuts the flood:
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.override.yml \
      -f docker-compose.monitoring.yml -f docker-compose.hardening.yml up -d victim
    ```
-   (ta sama pętla h2load)
+   (same h2load loop)
 
-W **Monitoring → Latest data** porównaj `nginx.requests.total.rate`, CPU oraz
-liczbę odpowiedzi `429` (w logu: `docker compose logs victim`). W trybie
-utwardzonym atak zostaje przycięty — mniej przetworzonych żądań, niższe CPU,
-a połączenia floodujące dostają `429`.
+In **Monitoring → Latest data** compare `nginx.requests.total.rate`, CPU, and
+the number of `429` responses (in logs: `docker compose logs victim`). In hardened
+mode the attack is throttled — fewer processed requests, lower CPU,
+and flooding connections get `429`.
 
-> Przełączenie trybu nie przebudowuje obrazu (zmienia się tylko montowana
-> konfiguracja), więc `up -d victim` wystarczy; powrót do trybu podatnego to
-> ten sam `up -d victim` bez pliku `-f docker-compose.hardening.yml`.
+> Switching modes does not rebuild the image (only the mounted
+> configuration changes), so `up -d victim` is enough; returning to vulnerable mode is
+> the same `up -d victim` without the `-f docker-compose.hardening.yml` file.
 
-## Sprzątanie
+## Cleanup
 
 ```bash
-docker compose down            # zatrzymuje kontenery
-docker compose down -v         # dodatkowo usuwa wolumen bazy Zabbixa (zabbix-db-data)
+docker compose down            # stops containers
+docker compose down -v         # also removes the Zabbix database volume (zabbix-db-data)
 ```
 
-## Ręczna konfiguracja (bez provisionera)
+## Manual configuration (without the provisioner)
 
 1. **Data collection → Hosts → Create host**.
-2. Host name: `victim` (musi zgadzać się z `Hostname` w `victim/zabbix_agent2.conf`).
-3. Groups: `DDoS Lab` (wpisz, by utworzyć).
+2. Host name: `victim` (must match the `Hostname` in `victim/zabbix_agent2.conf`).
+3. Groups: `DDoS Lab` (type to create).
 4. Interfaces → Add → **Agent**: `DNS name = victim`, Connect to = DNS, port `10050`.
-5. Templates → podlinkuj `Linux by Zabbix agent`.
-6. (Opcjonalnie nginx) podlinkuj `Nginx by HTTP` i ustaw makra hosta:
+5. Templates → link `Linux by Zabbix agent`.
+6. (Optionally for nginx) link `Nginx by HTTP` and set host macros:
    `{$NGINX.STUB_STATUS.HOST}=victim`, `{$NGINX.STUB_STATUS.PATH}=status`,
    `{$NGINX.STUB_STATUS.PORT}=443`, `{$NGINX.STUB_STATUS.SCHEME}=https`.
 
-## Uwagi / rozwiązywanie problemów
+## Notes / troubleshooting
 
-- **Host szary / „ZBX" czerwone**: serwer nie dociąga do agenta. Sprawdź, czy
-  `victim` wstał z nowego obrazu (`docker compose logs victim` → linia
-  `[lab] starting zabbix-agent2`) i czy oba są na `labnet`.
-- **Nginx template „No data"**: szablon `Nginx by HTTP` skrobie `https://victim/status`
-  z self-signed certem; pozycja HTTP-agent ma domyślnie wyłączoną weryfikację TLS.
-  Jeśli mimo to brak danych — metryki CPU/RAM z agenta i tak pokazują wpływ ataku.
-- **Port 8080 zajęty**: zmień mapowanie w `docker-compose.monitoring.yml`
-  (`"8080:8080"` → np. `"8090:8080"`).
-- Hasło Postgresa (`zabbix_pg_pw`) i hasło `Admin/zabbix` są **labowe** — nie używać poza labem.
+- **Host grey / "ZBX" red**: server cannot reach the agent. Check if
+  `victim` started with the new image (`docker compose logs victim` → line
+  `[lab] starting zabbix-agent2`) and if both are on `labnet`.
+- **Nginx template "No data"**: the `Nginx by HTTP` template scrapes `https://victim/status`
+  with a self-signed cert; the HTTP-agent item has TLS verification disabled by default.
+  If there's still no data — CPU/RAM metrics from the agent still show the attack impact.
+- **Port 8080 busy**: change the mapping in `docker-compose.monitoring.yml`
+  (`"8080:8080"` → e.g. `"8090:8080"`).
+- The Postgres password (`zabbix_pg_pw`) and `Admin/zabbix` password are **lab-only** — do not use outside the lab.

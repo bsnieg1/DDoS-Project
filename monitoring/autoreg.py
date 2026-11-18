@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Konfiguracja reguly AUTOREGISTRATION w Zabbixie (tylko biblioteka standardowa).
+AUTOREGISTRATION rule configuration in Zabbix (standard library only).
 
-Tworzy (idempotentnie):
-  - grupe hostow "DDoS Lab Pool",
-  - akcje autoregistration, ktora dla kazdej maszyny zglaszajacej sie z
-    HostMetadata zawierajacym "ddos-lab-pool":
-        * zaklada hosta,
-        * dodaje go do grupy "DDoS Lab Pool",
-        * podpina szablon "Linux by Zabbix agent".
+Creates (idempotently):
+  - host group "DDoS Lab Pool",
+  - autoregistration action that for every machine registering with
+    HostMetadata containing "ddos-lab-pool":
+        * creates the host,
+        * adds it to the "DDoS Lab Pool" group,
+        * links the "Linux by Zabbix agent" template.
 
-Dzieki temu  `docker compose ... up -d --scale victim-node=N`  sprawia, ze N
-maszyn samo pojawia sie w Zabbixie, bez recznego dodawania.
+This way `docker compose ... up -d --scale victim-node=N` causes N
+machines to automatically appear in Zabbix, without manual host creation.
 
-Uruchamiane zwykle przez usluge `zabbix-autoreg` (profil "provision").
+Usually run via the `zabbix-autoreg` service (profile "provision").
 """
 import json
 import os
@@ -55,19 +55,19 @@ def wait_for_api(retries=60, delay=5):
     for i in range(retries):
         try:
             ver = call("apiinfo.version", auth=False)
-            print("[autoreg] Zabbix API gotowe, wersja", ver)
+            print("[autoreg] Zabbix API ready, version", ver)
             return
         except (urllib.error.URLError, RuntimeError, ConnectionError) as e:
-            print("[autoreg] czekam na API (%d/%d): %s" % (i + 1, retries, e))
+            print("[autoreg] waiting for API (%d/%d): %s" % (i + 1, retries, e))
             time.sleep(delay)
-    print("[autoreg] API nie wstalo w zadanym czasie", file=sys.stderr)
+    print("[autoreg] API did not start in time", file=sys.stderr)
     sys.exit(1)
 
 
 def login():
     global _token
     _token = call("user.login", {"username": USER, "password": PASS}, auth=False)
-    print("[autoreg] zalogowano jako", USER)
+    print("[autoreg] logged in as", USER)
 
 
 def ensure_group():
@@ -75,14 +75,14 @@ def ensure_group():
     if res:
         return res[0]["groupid"]
     gid = call("hostgroup.create", {"name": GROUP})["groupids"][0]
-    print("[autoreg] utworzono grupe:", GROUP)
+    print("[autoreg] created group:", GROUP)
     return gid
 
 
 def template_id():
     res = call("template.get", {"filter": {"host": [TEMPLATE]}, "output": ["templateid"]})
     if not res:
-        print("[autoreg] BLAD: brak szablonu '%s'" % TEMPLATE, file=sys.stderr)
+        print("[autoreg] ERROR: template '%s' not found" % TEMPLATE, file=sys.stderr)
         sys.exit(1)
     return res[0]["templateid"]
 
@@ -90,27 +90,27 @@ def template_id():
 def create_action(gid, tid):
     existing = call("action.get", {"filter": {"name": [ACTION]}, "output": ["actionid"]})
     if existing:
-        print("[autoreg] akcja juz istnieje:", ACTION)
+        print("[autoreg] action already exists:", ACTION)
         return
     params = {
         "name": ACTION,
         "eventsource": 2,   # 2 = autoregistration
-        "status": 0,        # wlaczona
+        "status": 0,        # enabled
         "filter": {
             "evaltype": 0,  # And/Or
             "conditions": [
-                # conditiontype 24 = host metadata, operator 2 = like (zawiera)
+                # conditiontype 24 = host metadata, operator 2 = like (contains)
                 {"conditiontype": 24, "operator": 2, "value": METADATA_MATCH},
             ],
         },
         "operations": [
-            {"operationtype": 2},  # dodaj hosta
-            {"operationtype": 4, "opgroup": [{"groupid": gid}]},     # dodaj do grupy
-            {"operationtype": 6, "optemplate": [{"templateid": tid}]},  # podepnij szablon
+            {"operationtype": 2},  # add host
+            {"operationtype": 4, "opgroup": [{"groupid": gid}]},     # add to group
+            {"operationtype": 6, "optemplate": [{"templateid": tid}]},  # link template
         ],
     }
     call("action.create", params)
-    print("[autoreg] utworzono akcje autoregistration:", ACTION)
+    print("[autoreg] created autoregistration action:", ACTION)
 
 
 def main():
@@ -119,7 +119,7 @@ def main():
     gid = ensure_group()
     tid = template_id()
     create_action(gid, tid)
-    print("[autoreg] gotowe. Skaluj maszyny:  docker compose ... up -d --scale victim-node=N")
+    print("[autoreg] done. Scale machines:  docker compose ... up -d --scale victim-node=N")
 
 
 if __name__ == "__main__":

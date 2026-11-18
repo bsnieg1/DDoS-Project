@@ -1,47 +1,47 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Matryca 3D: TYP RUCHU x WARIANT SERWERA x ROZMIAR BOTNETU
+# 3D Matrix: TRAFFIC TYPE x SERVER VARIANT x BOTNET SIZE
 #
-#   typ ruchu:     attack (rapidreset: HEADERS+RST_STREAM) | legit (h2load: kompletne zadania)
-#   wariant:       old_normal | old_hardened | new_normal | new_hardened
-#                  (old = nginx 1.25.1, sprzed mitygacji 1.25.3; new = nginx 1.27)
-#   rozmiar:       1 5 10 25 50 100 (konfigurowalne przez SIZES)
+#   traffic type:  attack (rapidreset: HEADERS+RST_STREAM) | legit (h2load: complete requests)
+#   variant:       old_normal | old_hardened | new_normal | new_hardened
+#                  (old = nginx 1.25.1, pre-mitigation 1.25.3; new = nginx 1.27)
+#   size:          1 5 10 25 50 100 (configurable via SIZES)
 #
-# Dla kazdej kombinacji mierzy (wszystko sampled przez `docker stats`, jeden
-# call/sekunda zwraca ofiara + aktywna podgrupa botow naraz - bez zbednych
-# dodatkowych wywolan docker exec):
-#   - CPU% ofiary (lab-victim)
-#   - SUMA CPU% botow aktywnie generujacych ruch w tym kroku (koszt atakujacego)
-#   - delta polaczen/zadan z nginx stub_status
+# For each combination measures (all sampled via `docker stats`, one
+# call/second returns victim + active bot subset at once - no unnecessary
+# additional docker exec calls):
+#   - victim CPU% (lab-victim)
+#   - SUM of CPU% of bots actively generating traffic in this step (attacker cost)
+#   - connection/request delta from nginx stub_status
 #
-# Flota botfleet jest podnoszona RAZ do max(SIZES) i trzymana przez cala
-# matryce; kazdy krok uzywa tylko pierwszych N kontenerow z tej (stabilnej)
-# listy ID. Victim jest przebudowywany/restartowany miedzy wariantami
-# (docker-compose.labvic.yml, zmienne NGINX_OLD / VICTIM_MODE).
+# The botfleet fleet is brought up ONCE to max(SIZES) and kept for the entire
+# matrix; each step uses only the first N containers from that (stable)
+# list of IDs. Victim is rebuilt/restarted between variants
+# (docker-compose.labvic.yml, variables NGINX_OLD / VICTIM_MODE).
 #
-# Wyjscie: $OUTDIR/raw.csv (long format, 1 wiersz = 1 powtorzenie),
-#          $OUTDIR/timeline.txt (log przebiegu)
+# Output: $OUTDIR/raw.csv (long format, 1 row = 1 repetition),
+#         $OUTDIR/timeline.txt (run log)
 #
-# Parametry (zmienne srodowiskowe):
+# Parameters (environment variables):
 #   SIZES="1 5 10 25 50 100"
 #   MODES="attack legit"
-#   REPS=2            powtorzenia kazdej komorki matrycy
-#   REQ=2000 CONC=100  parametry per-bot na jedno uderzenie (STALE w calej matrycy,
-#                      zmienna jest tylko N - tak, by izolowac efekt rozmiaru botnetu)
-#   WARM=3 WIN=4 NWIN=2 GAP=3   okna pomiarowe (sekundy)
-#   BOT_CPUS=0.5 VIC_CPUS=2     limity CPU (VIC_CPUS musi sie zgadzac z
-#                               worker_processes w victim/nginx*.conf!)
+#   REPS=2            repetitions per matrix cell
+#   REQ=2000 CONC=100  per-bot parameters per single burst (CONSTANT across the entire
+#                      matrix, only N varies - to isolate the effect of botnet size)
+#   WARM=3 WIN=4 NWIN=2 GAP=3   measurement windows (seconds)
+#   BOT_CPUS=0.5 VIC_CPUS=2     CPU limits (VIC_CPUS must match
+#                               worker_processes in victim/nginx*.conf!)
 #
-# IZOLACJA RDZENI: victim jest przypiety do rdzeni 0,1, flota do 2-11
-# (docker-compose.labvic.yml / docker-compose.botnet.yml, cpuset). Dzieki
-# temu BOT_CPUS x max(SIZES) moze bezpiecznie przekraczac liczbe rdzeni
-# dostepnych flocie (kontenery floty beda sie throttlowac MIEDZY SOBA, co
-# jest OK i realistyczne - ale NIGDY nie odbiora CPU ofierze). Mimo to, dla
-# czytelnych wynikow, trzymaj BOT_CPUS x max(SIZES) w okolicy liczby rdzeni
-# przypisanych flocie (np. 10 rdzeni -> BOT_CPUS=0.1 dla SIZES do 100).
+# CORE ISOLATION: victim is pinned to cores 0,1, fleet to 2-11
+# (docker-compose.labvic.yml / docker-compose.botnet.yml, cpuset). This way
+# BOT_CPUS x max(SIZES) can safely exceed the number of cores available to the
+# fleet (fleet containers will throttle AMONG THEMSELVES, which is OK and
+# realistic - but they will NEVER steal CPU from the victim). Still, for
+# readable results, keep BOT_CPUS x max(SIZES) around the number of cores
+# assigned to the fleet (e.g. 10 cores -> BOT_CPUS=0.1 for SIZES up to 100).
 #
-# Wymaga: docker compose up -d --build (bazowy lab) NIE jest wymagane z wyprzedzeniem -
-# skrypt sam buduje/startuje wszystko, co potrzebuje.
+# Requires: docker compose up -d --build (base lab) is NOT required upfront -
+# the script builds/starts everything it needs on its own.
 # =============================================================================
 set -u
 export MSYS_NO_PATHCONV=1 2>/dev/null || true
@@ -74,19 +74,19 @@ log() { echo "$(date '+%H:%M:%S') | $*" | tee -a "$TL"; }
 
 echo "metric_scenario,mode,variant,ver,hard,size,rep,cpu_victim_pct,cpu_bots_sum_pct,active_conns,ngx_req_delta,ngx_accept_delta" > "$CSV"
 
-# --- 0. Flota: podnies RAZ do NMAX, zapamietaj stabilna liste ID ---
-log "=== SETUP: baza + flota botfleet=$NMAX (BOT_CPUS=$BOT_CPUS) ==="
+# --- 0. Fleet: bring up ONCE to NMAX, store stable list of IDs ---
+log "=== SETUP: base + fleet botfleet=$NMAX (BOT_CPUS=$BOT_CPUS) ==="
 BOT_CPUS="$BOT_CPUS" dc up -d --build --scale "botfleet=$NMAX"
 sleep 2
 ALL_BOT_IDS=($(dc ps -q botfleet))
 ACTUAL_N=${#ALL_BOT_IDS[@]}
-log "flota gotowa: $ACTUAL_N botow (zadano $NMAX)"
+log "fleet ready: $ACTUAL_N bots (requested $NMAX)"
 if [ "$ACTUAL_N" -lt "$NMAX" ]; then
-  log "UWAGA: dostalem mniej botow niz zadano - sprawdz limity Dockera/hosta"
+  log "WARNING: got fewer bots than requested - check Docker/host limits"
 fi
 
 # --- helpers ---
-stub_pair() { # zwraca "active req accept" z stub_status (0 0 0 na bledzie)
+stub_pair() { # returns "active req accept" from stub_status (0 0 0 on error)
   local out
   out="$(dc exec -T loadgen curl -sk --max-time 3 https://victim/status 2>/dev/null)"
   local act req acc
@@ -105,13 +105,13 @@ wait_victim() {
   return 1
 }
 
-# docker stats dla victim + konkretnej podgrupy botow, jedno probkowanie
-sample_once() { # $@ = lista ID botow do zsumowania
+# docker stats for victim + specific bot subset, single sample
+sample_once() { # $@ = list of bot IDs to sum
   local ids=("lab-victim" "$@")
   docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}' "${ids[@]}" 2>/dev/null
 }
 
-run_window() { # $1=duration(s) $2...=bot ids aktywne w tym kroku; echo "cpu_victim cpu_bots_sum"
+run_window() { # $1=duration(s) $2...=bot ids active in this step; echo "cpu_victim cpu_bots_sum"
   local dur="$1"; shift
   local vsum=0 bsum=0 n=0 t_end=$(( $(date +%s) + dur ))
   while [ "$(date +%s)" -lt "$t_end" ]; do
@@ -155,11 +155,11 @@ stop_bots() {
 
 run_variant() { # $1=label $2=ver(nginx tag) $3=mode-hardening(normal|hardened)
   local label="$1" ver="$2" hard="$3"
-  log "=== WARIANT $label (nginx=$ver, mode=$hard) ==="
+  log "=== VARIANT $label (nginx=$ver, mode=$hard) ==="
   NGINX_OLD="$ver" VICTIM_MODE="$hard" VIC_CPUS="$VIC_CPUS" dc build victim >/dev/null 2>&1
   NGINX_OLD="$ver" VICTIM_MODE="$hard" VIC_CPUS="$VIC_CPUS" dc up -d --force-recreate victim >/dev/null 2>&1
   if ! wait_victim; then
-    log "BLAD: victim nie wstal dla $label - pomijam"
+    log "ERROR: victim did not start for $label - skipping"
     return
   fi
 
@@ -186,14 +186,14 @@ run_variant() { # $1=label $2=ver(nginx tag) $3=mode-hardening(normal|hardened)
   done
 }
 
-# --- Baseline (bez ruchu, dla punktu odniesienia) - po jednym per wariant pozniej jest w CSV jako size odrebny wpis nie jest potrzebny; pomijamy, bo 'size' najmniejsze (1) juz daje odniesienie ---
+# --- Baseline (no traffic, for reference) - one per variant is later in CSV as a separate size entry and is not needed; we skip it, since the smallest 'size' (1) already provides reference ---
 
 run_variant old_normal   1.25.1-alpine normal
 run_variant old_hardened 1.25.1-alpine hardened
 run_variant new_normal   1.27-alpine   normal
 run_variant new_hardened 1.27-alpine   hardened
 
-log "=== MATRYCA GOTOWA -> $CSV ==="
+log "=== MATRIX COMPLETE -> $CSV ==="
 echo
-echo "Wierszy w CSV: $(($(wc -l < "$CSV") - 1))"
-echo "Dalej: python scenarios/make_charts.py $CSV $OUTDIR/charts"
+echo "Rows in CSV: $(($(wc -l < "$CSV") - 1))"
+echo "Next: python scenarios/make_charts.py $CSV $OUTDIR/charts"

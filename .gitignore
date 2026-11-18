@@ -1,4 +1,4 @@
-# === Sekrety / certyfikaty (NIGDY do repo) ===
+# === Secrets / certificates (NEVER commit to repo) ===
 *.pem
 *.key
 *.crt
@@ -7,7 +7,7 @@
 victim/cert.pem
 victim/key.pem
 
-# === Sliver C2 - stan runtime ===
+# === Sliver C2 - runtime state ===
 c2/bin/
 c2/data/sliver.db
 c2/data/sliver.db-shm
@@ -42,10 +42,10 @@ env/
 .mypy_cache/
 .ruff_cache/
 
-# === Docker / lokalne overridy ===
-# docker-compose.override.yml  # odkomentuj jeśli to plik lokalny dewelopera
+# === Docker / local overrides ===
+# docker-compose.override.yml  # uncomment if this is a local developer file
 
-# === Edytor / OS ===
+# === Editor / OS ===
 .idea/
 .vscode/
 *.swp
@@ -54,18 +54,18 @@ env/
 Thumbs.db
 desktop.ini
 
-# === Pliki tymczasowe MS Office ===
+# === MS Office temporary files ===
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
 
-# === Logi ===
+# === Logs ===
 *.log
 logs/
 
-# Wyniki symulacji A/B (generowane)
+# A/B simulation results (generated)
 results/
 
-# Wyniki probe (generowane na nowo przy kazdym eksperymencie)
+# Probe results (regenerated for each experiment)
 **/probe.csv
 lab-results/

@@ -1,28 +1,28 @@
-# Tryb UTWARDZONY victima — hardening przeciw HTTP/2 Rapid Reset.
-# Podmienia zamontowana konfiguracje nginx na wariant z rate-limitingiem i
-# zaostrzonymi limitami HTTP/2 (victim/nginx.hardened.conf). Reszta (agent
-# Zabbix, siec, limity zasobow) bez zmian.
+# HARDENED victim mode — hardening against HTTP/2 Rapid Reset.
+# Replaces the mounted nginx configuration with the variant that includes rate-limiting
+# and tightened HTTP/2 limits (victim/nginx.hardened.conf). Everything else (Zabbix
+# agent, network, resource limits) remains unchanged.
 #
-# Porownanie before/after na jednym stanowisku:
+# Before/after comparison on a single workstation:
 #
-#   # 1) Tryb PODATNY (baza) — odpal atak, zobacz skok w Zabbixie:
+#   # 1) VULNERABLE mode (base) — launch the attack, see the spike in Zabbix:
 #   docker compose \
 #     -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.monitoring.yml up -d --build victim
 #
-#   # 2) Tryb UTWARDZONY — ten sam atak, rate-limit tnie flood:
+#   # 2) HARDENED mode — same attack, rate-limit cuts the flood:
 #   docker compose \
 #     -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.monitoring.yml -f docker-compose.hardening.yml \
 #     up -d victim
 #
-# Po kazdej zmianie uruchom ten sam ruch h2load (patrz README-MONITORING.md,
-# sekcja "Test detekcji") i porownaj metryki/alerty.
+# After each change, run the same h2load traffic (see README-MONITORING.md,
+# "Detection test" section) and compare metrics/alerts.
 
 services:
   victim:
     volumes:
-      # Compose scala wolumeny po sciezce docelowej, wiec ten wpis NADPISUJE
-      # montaz nginx.conf z bazy (ta sama docelowa /etc/nginx/nginx.conf),
-      # podkladajac wariant utwardzony. Pozostale montaze (certy, html) zostaja.
+      # Compose merges volumes by target path, so this entry OVERRIDES
+      # the nginx.conf mount from the base (same target /etc/nginx/nginx.conf),
+      # substituting the hardened variant. Other mounts (certs, html) remain.
       - ./victim/nginx.hardened.conf:/etc/nginx/nginx.conf:ro

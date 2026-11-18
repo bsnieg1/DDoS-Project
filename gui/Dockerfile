@@ -1,7 +1,7 @@
-# Panel GUI do sterowania flota botow. Uruchamia sie z zamontowanym
-# /var/run/docker.sock i zarzadza wlasna pula kontenerow-botow przez docker CLI.
+# GUI panel for controlling the bot fleet. Runs with a mounted
+# /var/run/docker.sock and manages its own pool of bot containers via docker CLI.
 FROM python:3.12-alpine
-# docker-cli = klient do rozmowy z zamontowanym socketem demona hosta.
+# docker-cli = client to communicate with the mounted host daemon socket.
 RUN apk add --no-cache docker-cli
 COPY app.py /app/app.py
 WORKDIR /app

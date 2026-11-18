@@ -1,13 +1,13 @@
-# Skalowalna pula dodatkowych maszyn-ofiar (fleet) do monitoringu w Zabbixie.
-# Kazda replika to ten sam obraz co victim (nginx HTTP/2 + zabbix-agent2), ale:
-#   - bez sztywnej nazwy kontenera -> usluge mozna skalowac (--scale),
-#   - z dynamiczna nazwa hosta (HostnameItem=system.hostname) -> unikalna per replika,
-#   - z HostMetadata=ddos-lab-pool -> serwer sam zaklada hosta (autoregistration).
+# Scalable pool of additional victim machines (fleet) for Zabbix monitoring.
+# Each replica is the same image as victim (nginx HTTP/2 + zabbix-agent2), but:
+#   - without a fixed container name -> the service is scalable (--scale),
+#   - with a dynamic hostname (HostnameItem=system.hostname) -> unique per replica,
+#   - with HostMetadata=ddos-lab-pool -> the server auto-registers the host (autoregistration).
 #
-# Wymaga warstwy monitoringu (docker-compose.monitoring.yml), bo korzysta z
-# obrazu lab-victim-zabbix oraz sieci labnet i serwera zabbix-server.
+# Requires the monitoring layer (docker-compose.monitoring.yml), because it uses
+# the lab-victim-zabbix image and the labnet network and zabbix-server.
 #
-# Wlaczenie 5 maszyn:
+# Enable 5 machines:
 #   docker compose \
 #     -f docker-compose.yml \
 #     -f docker-compose.override.yml \
@@ -15,30 +15,30 @@
 #     -f docker-compose.victims.yml \
 #     up -d --build victim-node
 #
-# Inna liczba maszyn (np. 10):  dodaj  --scale victim-node=10
-# Najpierw jednorazowo wlacz regule autoregistration (patrz README-MONITORING.md):
+# Different number of machines (e.g. 10):  add  --scale victim-node=10
+# First, one-time enable the autoregistration rule (see README-MONITORING.md):
 #   docker compose ... run --rm zabbix-autoreg
 
 services:
   victim-node:
     build: ./victim
     image: lab-victim-zabbix:latest
-    # BRAK container_name -> usluga jest skalowalna.
+    # NO container_name -> service is scalable.
     restart: unless-stopped
     environment:
-      # Czytelna, unikalna nazwa hosta: victim-<id kontenera>, np. victim-ab12cd34.
+      # Readable, unique hostname: victim-<container id>, e.g. victim-ab12cd34.
       ZBX_HOSTNAME_PREFIX: "victim"
-      # Znacznik dla reguly autoregistration na serwerze.
+      # Tag for the autoregistration rule on the server.
       ZBX_METADATA: "ddos-lab-pool"
     networks:
       - labnet
     deploy:
-      # Domyslnie 5 maszyn; nadpiszesz przez  --scale victim-node=N
+      # Default 5 machines; override with  --scale victim-node=N
       replicas: 5
 
-  # Jednorazowy setup: tworzy regule autoregistration, ktora automatycznie
-  # zaklada kazda zgloszona maszyne z HostMetadata "ddos-lab-pool",
-  # wrzuca ja do grupy "DDoS Lab Pool" i podpina szablon Linux.
+  # One-time setup: creates an autoregistration rule that automatically
+  # registers each machine with HostMetadata "ddos-lab-pool",
+  # adds it to the "DDoS Lab Pool" group and links the Linux template.
   zabbix-autoreg:
     image: python:3.12-alpine
     container_name: lab-zabbix-autoreg

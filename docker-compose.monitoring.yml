@@ -1,26 +1,26 @@
-# Warstwa monitoringu: serwer Zabbix (7.0 LTS) + baza PostgreSQL + frontend WWW.
-# Opcjonalny overlay — bazowy lab (victim + loadgen [+ bot + c2]) dziala bez niego.
+# Monitoring layer: Zabbix server (7.0 LTS) + PostgreSQL database + web frontend.
+# Optional overlay — the base lab (victim + loadgen [+ bot + c2]) works without it.
 #
-# Wlaczenie (razem z bazowym override bot/c2):
+# Enable (together with the base override bot/c2):
 #   docker compose \
 #     -f docker-compose.yml \
 #     -f docker-compose.override.yml \
 #     -f docker-compose.monitoring.yml \
 #     up -d --build
 #
-# Albo przez zmienna srodowiskowa (zeby nie wpisywac -f za kazdym razem):
+# Or via environment variable (to avoid typing -f each time):
 #   export COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.monitoring.yml
 #
 # Frontend: http://localhost:8080  (login: Admin / zabbix)
 #
-# Siec:
-#   - labnet  (internal, z bazy)  -> serwer <-> agent(victim) <-> baza, bez internetu
-#   - monnet  (bridge)            -> tylko po to, by wystawic port 8080 frontendu na host
+# Networks:
+#   - labnet  (internal, from base)  -> server <-> agent(victim) <-> database, no internet
+#   - monnet  (bridge)               -> only to expose frontend port 8080 to the host
 
 services:
-  # Podmiana victima na obraz z wbudowanym zabbix-agent2 (patrz victim/Dockerfile).
-  # Reszta definicji (volumes, siec labnet, limity CPU/RAM) dziedziczy sie z
-  # docker-compose.yml i docker-compose.override.yml przez merge.
+  # Replace victim with an image that includes zabbix-agent2 (see victim/Dockerfile).
+  # The rest of the definition (volumes, labnet network, CPU/RAM limits) is inherited from
+  # docker-compose.yml and docker-compose.override.yml via merge.
   victim:
     build: ./victim
     image: lab-victim-zabbix:latest
@@ -48,7 +48,7 @@ services:
       POSTGRES_PASSWORD: zabbix_pg_pw
       POSTGRES_DB: zabbix
     volumes:
-      # Skrypty alertow (media type typu "script"); lab_alert.sh loguje alerty.
+      # Alert scripts (script type media); lab_alert.sh logs alerts.
       - ./monitoring/alertscripts:/usr/lib/zabbix/alertscripts:ro
     depends_on:
       - zabbix-db
@@ -75,8 +75,8 @@ services:
       - labnet
       - monnet
 
-  # Jednorazowy provisioner: tworzy w Zabbixie hosta "victim", podpina go pod
-  # agenta i szablony. Uruchamiany na zadanie profilem "provision" (patrz README).
+  # One-time provisioner: creates the "victim" host in Zabbix, connects it to
+  # the agent and templates. Run on demand via "provision" profile (see README).
   zabbix-provision:
     image: python:3.12-alpine
     container_name: lab-zabbix-provision
@@ -94,7 +94,7 @@ services:
     networks:
       - monnet
 
-  # Jednorazowy setup detekcji: triggery (CPU / zadania / Rapid Reset) + alertowanie.
+  # One-time detection setup: triggers (CPU / requests / Rapid Reset) + alerting.
   zabbix-alerts:
     image: python:3.12-alpine
     container_name: lab-zabbix-alerts

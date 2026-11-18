@@ -1,31 +1,31 @@
-# Obraz victima rozszerzony o zabbix-agent2.
-# Bazowy lab (docker-compose.yml) nadal uzywa czystego nginx:1.27-alpine;
-# ten obraz wchodzi do gry TYLKO gdy dolaczysz docker-compose.monitoring.yml,
-# ktory podmienia usluge victim na build z tego katalogu.
+# Victim image extended with zabbix-agent2.
+# The base lab (docker-compose.yml) still uses plain nginx:1.27-alpine;
+# this image comes into play ONLY when you include docker-compose.monitoring.yml,
+# which replaces the victim service with a build from this directory.
 #
-# Dzieki temu atakowany host (nginx HTTP/2) jest jednoczesnie pelnoprawnym
-# hostem monitorowanym w Zabbixie: agent raportuje CPU, pamiec, load i ruch
-# sieciowy tego samego kontenera, ktory obrywa w czasie HTTP/2 Rapid Reset.
+# This way the attacked host (nginx HTTP/2) is simultaneously a fully monitored
+# host in Zabbix: the agent reports CPU, memory, load and network traffic
+# of the same container that takes hits during the HTTP/2 Rapid Reset attack.
 
-# Wersja bazowego nginx jest parametryzowana, zeby mozna bylo zbudowac victima
-# na starszym, PODATNYM na HTTP/2 Rapid Reset nginx (<= 1.25.2, sprzed mitygacji
-# dodanej w 1.25.3). Domyslnie 1.27-alpine (zmitygowany). Nadpisanie:
+# The base nginx version is parameterized so the victim can be built on an older,
+# VULNERABLE to HTTP/2 Rapid Reset nginx (<= 1.25.2, before the mitigation
+# added in 1.25.3). Default 1.27-alpine (mitigated). Override:
 #   docker compose ... build --build-arg NGINX_VERSION=1.25.2-alpine
-# albo przez docker-compose.vuln.yml (ustawia ten arg automatycznie).
+# or via docker-compose.vuln.yml (sets this arg automatically).
 ARG NGINX_VERSION=1.27-alpine
 FROM nginx:${NGINX_VERSION}
 
-# zabbix-agent2 jest w repo community Alpine (7.0.x, zgodny z serwerem 7.0 LTS).
+# zabbix-agent2 is in the Alpine community repo (7.0.x, compatible with server 7.0 LTS).
 RUN apk add --no-cache zabbix-agent2
 
 COPY zabbix_agent2.conf /etc/zabbix/zabbix_agent2.conf
 COPY docker-entrypoint-lab.sh /usr/local/bin/docker-entrypoint-lab.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-lab.sh
 
-# Port nasluchu agenta (passive checks: serwer -> agent).
+# Agent listen port (passive checks: server -> agent).
 EXPOSE 10050
 
-# Nasz wrapper startuje agenta w tle, a potem oddaje sterowanie
-# oryginalnemu entrypointowi nginx (konfiguracja TLS + nginx na pierwszym planie).
+# Our wrapper starts the agent in the background, then hands over control
+# to the original nginx entrypoint (TLS setup + nginx in the foreground).
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint-lab.sh"]
 CMD ["nginx", "-g", "daemon off;"]

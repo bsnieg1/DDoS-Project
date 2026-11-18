@@ -1,11 +1,11 @@
-# Lab HTTP/2 — część defensywno-edukacyjna
+# Lab HTTP/2 — defensive / educational part
 
-To jest **zredukowana** wersja środowiska z `PLAN_SETUP.md`. Zawiera wyłącznie
-elementy nieofensywne: serwer-ofiarę nginx po HTTP/2 oraz generator ruchu
-odniesienia `h2load`. Służy do zrozumienia protokołu HTTP/2 i mechaniki podatności
-CVE-2023-44487, bez budowania działającego narzędzia ataku ani infrastruktury C2.
+This is a **reduced** version of the environment from `PLAN_SETUP.md`. It contains only
+non-offensive elements: the nginx victim server over HTTP/2 and the reference traffic
+generator `h2load`. It serves to understand the HTTP/2 protocol and the mechanics of
+vulnerability CVE-2023-44487, without building a working attack tool or C2 infrastructure.
 
-## Uruchomienie
+## Startup
 
 ```bash
 cd ddos-lab
@@ -13,61 +13,61 @@ docker compose up -d --build
 docker compose ps
 ```
 
-## Weryfikacja (z wnętrza izolowanej sieci)
+## Verification (from inside the isolated network)
 
-Sieć `labnet` jest `internal` (brak internetu, brak publikacji portów na host),
-więc polecenia uruchamiamy przez `exec` w kontenerze `loadgen`:
+The `labnet` network is `internal` (no internet, no ports published to the host),
+so commands are run via `exec` in the `loadgen` container:
 
 ```bash
-# 1. serwer-ofiara odpowiada po HTTP/2
+# 1. victim server responds over HTTP/2
 docker compose exec loadgen curl -k --http2 https://victim/ -I
 
-# 2. baseline normalnego ruchu HTTP/2
+# 2. baseline of normal HTTP/2 traffic
 docker compose exec loadgen h2load -n 1000 -c 10 https://victim/
 
-# 3. podgląd stub_status serwera
+# 3. view server stub_status
 docker compose exec loadgen curl -k https://victim/status
 ```
 
-W logu dostępu nginx (`docker compose logs victim`) zobaczysz `proto=HTTP/2.0`
-oraz liczbę żądań na połączenie.
+In the nginx access log (`docker compose logs victim`) you will see `proto=HTTP/2.0`
+and the number of requests per connection.
 
-## Mechanika CVE-2023-44487 (HTTP/2 Rapid Reset) — do zrozumienia, nie do użycia
+## CVE-2023-44487 mechanics (HTTP/2 Rapid Reset) — for understanding, not for use
 
-HTTP/2 multipleksuje wiele **strumieni** (żądań) na jednym połączeniu TCP/TLS.
-Serwer ogłasza limit równoczesnych strumieni przez `SETTINGS_MAX_CONCURRENT_STREAMS`.
+HTTP/2 multiplexes many **streams** (requests) over a single TCP/TLS connection.
+The server announces the concurrent stream limit via `SETTINGS_MAX_CONCURRENT_STREAMS`.
 
-Istota podatności: klient wysyła `HEADERS` (otwiera strumień, serwer zaczyna
-alokować pracę), a natychmiast potem `RST_STREAM` (anuluje strumień). Anulowany
-strumień **nie liczy się** do limitu równoczesnych strumieni, więc klient może w
-pętli otwierać-i-anulować żądania znacznie szybciej, niż serwer zdąży je
-posprzątać. Koszt po stronie klienta jest znikomy, po stronie serwera — realna
-praca (routing, alokacja, czasem przekazanie do backendu). Stąd asymetria, która
-czyni z tego wektor DoS możliwy do wywołania nawet z pojedynczego hosta.
+The essence of the vulnerability: the client sends `HEADERS` (opens a stream, the server
+starts allocating work), then immediately sends `RST_STREAM` (cancels the stream). The
+cancelled stream **does not count** toward the concurrent stream limit, so the client can
+open-and-cancel requests in a loop much faster than the server can clean them up. The cost
+on the client side is negligible; on the server side — real work (routing, allocation,
+sometimes forwarding to the backend). Hence the asymmetry that makes this a DoS vector
+achievable even from a single host.
 
-## Wykrywanie
+## Detection
 
-- **Nietypowy stosunek** liczby otwartych strumieni do ukończonych odpowiedzi;
-  dużo `RST_STREAM` inicjowanych przez klienta tuż po `HEADERS`.
-- **Krótkożyjące strumienie** masowo anulowane — widoczne w metrykach serwera /
-  reverse-proxy (np. liczba resetów na połączenie).
-- Wzrost obciążenia CPU przy niskim wolumenie ruchu „użytecznego" (mało
-  kompletnych odpowiedzi 2xx przy dużej liczbie rozpoczętych żądań).
-- Logi: wiele żądań na jednym połączeniu kończących się bez pełnej odpowiedzi.
+- **Unusual ratio** of opened streams to completed responses;
+  many `RST_STREAM` initiated by the client right after `HEADERS`.
+- **Short-lived streams** being mass-cancelled — visible in server /
+  reverse-proxy metrics (e.g. resets per connection).
+- CPU load increase with low volume of "useful" traffic (few
+  complete 2xx responses despite a high number of initiated requests).
+- Logs: many requests on a single connection ending without a full response.
 
-## Mitygacja
+## Mitigation
 
-- **Łatki** serwerów/bibliotek HTTP/2 wydane po ujawnieniu CVE-2023-44487
-  (nginx, Apache, Go net/http, Envoy, HAProxy i in.) — podstawowy krok.
-- **`http2_max_concurrent_streams`** — rozsądny limit (w konfiguracji labu: 128).
-- **`keepalive_requests`** — ograniczenie liczby żądań na jedno połączenie, po
-  przekroczeniu połączenie jest zamykane (w labie: 1000).
-- **Limit tempa resetów**: zamykanie połączenia, które generuje nienaturalnie
-  dużo `RST_STREAM` (mechanizm wprowadzony m.in. w Go i innych stosach).
-- **Reverse-proxy / WAF / rate-limiting** przed serwerem aplikacyjnym.
-- Monitoring i alerty na opisane wyżej sygnały.
+- **Patches** for HTTP/2 servers/libraries released after disclosure of CVE-2023-44487
+  (nginx, Apache, Go net/http, Envoy, HAProxy, etc.) — the fundamental step.
+- **`http2_max_concurrent_streams`** — a reasonable limit (in lab config: 128).
+- **`keepalive_requests`** — limiting requests per connection; after exceeding
+  this limit, the connection is closed (in lab: 1000).
+- **Reset rate limiting**: closing connections that generate an unnaturally
+  high number of `RST_STREAM` (mechanism introduced in Go and other stacks).
+- **Reverse-proxy / WAF / rate-limiting** in front of the application server.
+- Monitoring and alerts on the signals described above.
 
-## Sprzątanie
+## Cleanup
 
 ```bash
 docker compose down

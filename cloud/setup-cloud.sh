@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# setup-cloud.sh — przygotuj katalog cloud/ do uruchomienia.
-# Kopiuje (lub linkuje) potrzebne zrodla z glownego repo do cloud/.
+# setup-cloud.sh — prepare the cloud/ directory for running.
+# Copies (or symlinks) needed sources from the main repo into cloud/.
 #
-# Uzycie (z katalogu cloud/):
+# Usage (from the cloud/ directory):
 #   bash setup-cloud.sh
 #
-# Po tym: bash run-experiments.sh
+# After this: bash run-experiments.sh
 # =============================================================================
 set -euo pipefail
 
@@ -14,17 +14,17 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 PARENT="$(dirname "$ROOT")"
 cd "$ROOT"
 
-echo "[setup] Linkuje zrodla z $PARENT do $ROOT ..."
+echo "[setup] Linking sources from $PARENT to $ROOT ..."
 
 for dir in victim bot probe monitoring; do
   if [ ! -e "$dir" ]; then
     ln -sf "$PARENT/$dir" "$dir"
     echo "  -> $dir (symlink)"
   else
-    echo "  -> $dir (juz istnieje)"
+    echo "  -> $dir (already exists)"
   fi
 done
 
 mkdir -p results
 
-echo "[setup] Gotowe. Teraz odpal: bash run-experiments.sh"
+echo "[setup] Done. Now run: bash run-experiments.sh"

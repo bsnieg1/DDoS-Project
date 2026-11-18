@@ -1,12 +1,12 @@
 name: ddos-lab
 
-# Zredukowane, defensywno-edukacyjne laboratorium:
-#   victim  - serwer nginx po HTTP/2 (TLS self-signed)
-#   loadgen - h2load do pomiaru baseline normalnego ruchu HTTP/2
+# Reduced, defensive/educational laboratory:
+#   victim  - nginx server over HTTP/2 (TLS self-signed)
+#   loadgen - h2load for measuring baseline of normal HTTP/2 traffic
 #
-# Siec labnet ma internal: true -> kontenery nie maja routingu do internetu.
-# Weryfikacje wykonujemy z wnetrza (docker compose exec loadgen ...), bo siec
-# internal nie publikuje portow na host.
+# The labnet network has internal: true -> containers have no routing to the internet.
+# Verification is done from inside (docker compose exec loadgen ...), because the
+# internal network does not publish ports to the host.
 
 services:
   victim:

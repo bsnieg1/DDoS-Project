@@ -1,9 +1,9 @@
-# Sonda latencji (vegeta) - mierzy czas odpowiedzi uczciwego klienta wobec
-# victima. Przypieta do rdzenia 2 NA WYLACZNOSC (victim: 0-1, flota: 3-11),
-# zeby jej pomiary NIE byly skazone wlasnym glodzeniem CPU - to warunek
-# wiarygodnosci wykresu latencji.
+# Latency probe (vegeta) - measures response time of a legitimate client against
+# the victim. Pinned to core 2 EXCLUSIVELY (victim: 0-1, fleet: 3-11),
+# so its measurements are NOT skewed by its own CPU starvation - this is a
+# prerequisite for reliable latency charts.
 #
-# Uruchamiana razem z reszta stosu przez scenarios/control.sh ('up'), albo:
+# Launched together with the rest of the stack via scenarios/control.sh ('up'), or:
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f docker-compose.labvic.yml -f docker-compose.probe.yml up -d --build probe
 
